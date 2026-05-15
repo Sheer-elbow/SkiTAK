@@ -1,0 +1,42 @@
+# MediaMTX configuration for SkiTAK
+# Relays RTSP/RTMP/WebRTC streams from drones and cameras
+
+# Global settings
+logLevel: info
+logDestinations: [stdout]
+
+# RTSP server (drones, action cameras)
+rtsp: yes
+rtspAddress: :8554
+rtspsAddress: :8555
+rtspEncryption: no          # TLS handled by Nginx for WebRTC; RTSP is internal
+
+# RTMP (optional — some camera apps push RTMP)
+rtmp: yes
+rtmpAddress: :1935
+
+# WebRTC (browser-based video in the dashboard)
+webrtc: yes
+webrtcAddress: :8889
+
+# HLS (fallback for devices that can't do WebRTC)
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+hlsSegmentCount: 3
+hlsSegmentDuration: 1s
+
+# Authentication — integrate with OTS API
+# Paths can be restricted per stream name
+authMethod: http
+authHTTPAddress: http://opentakserver:8080/api/mediamtx/auth
+
+# Stream paths
+# Streams are created dynamically when a source publishes.
+# Pattern: /stream/{session_id}/{device_uid}
+paths:
+  "~^/stream/.+$":
+    readUser: ""            # read auth handled by authHTTPAddress
+    readPass: ""
+    runOnReady: ""
+    runOnReadyRestart: no
