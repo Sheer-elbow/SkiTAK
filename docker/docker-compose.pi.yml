@@ -1,0 +1,71 @@
+# Raspberry Pi 5 / off-grid portable overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.pi.yml up
+#
+# Designed for: Pi 5 (4GB), battery pack, WiFi hotspot
+# Drops: MediaMTX (no drone feeds off-grid), mbtileserver optional
+# Adds:  Meshtastic gateway bridge
+
+services:
+
+  postgres:
+    image: postgis/postgis:16-3.4  # same image, arm64 supported
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  rabbitmq:
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  opentakserver:
+    environment:
+      OTS_MULTICAST_ENABLED: "true"          # enable mesh SA for local WiFi
+      OTS_MULTICAST_ADDRESS: "239.2.3.1"
+      OTS_MULTICAST_PORT: "6969"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  nginx:
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+
+  mumble:
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  # Meshtastic LoRa gateway (off-grid bridge)
+  meshtastic-gateway:
+    image: python:3.11-slim
+    container_name: skitak-meshtastic
+    restart: unless-stopped
+    privileged: true          # USB serial access for LoRa radio
+    volumes:
+      - /dev:/dev
+      - ../../integrations/meshtastic:/app
+    working_dir: /app
+    command: ["python", "gateway.py"]
+    environment:
+      MESHTASTIC_SERIAL_PORT: ${MESHTASTIC_PORT:-/dev/ttyUSB0}
+      TAK_SERVER_HOST: opentakserver
+      TAK_SERVER_PORT: 8088   # internal unencrypted, within Docker network
+    depends_on:
+      - opentakserver
+
+  # Disable heavy/unnecessary services on Pi
+  mediamtx:
+    profiles: ["full"]        # opt-in only
+
+  mbtileserver:
+    deploy:
+      resources:
+        limits:
+          memory: 64m

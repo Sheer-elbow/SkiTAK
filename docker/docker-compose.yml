@@ -1,0 +1,136 @@
+services:
+
+  # ── PostgreSQL + PostGIS ──────────────────────────────────────────────────
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: skitak-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-skitak}
+      POSTGRES_USER: ${POSTGRES_USER:-skitak}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-skitak} -d ${POSTGRES_DB:-skitak}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── RabbitMQ ──────────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: skitak-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-skitak}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD must be set}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ── OpenTAKServer ─────────────────────────────────────────────────────────
+  opentakserver:
+    build:
+      context: ./opentakserver
+      dockerfile: Dockerfile
+    container_name: skitak-ots
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      OTS_DATABASE_URI: postgresql://${POSTGRES_USER:-skitak}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-skitak}
+      OTS_RABBITMQ_HOST: rabbitmq
+      OTS_RABBITMQ_PORT: 5672
+      OTS_RABBITMQ_USER: ${RABBITMQ_USER:-skitak}
+      OTS_RABBITMQ_PASS: ${RABBITMQ_PASSWORD}
+      OTS_SECRET_KEY: ${OTS_SECRET_KEY:?OTS_SECRET_KEY must be set}
+      OTS_SERVER_ADDRESS: ${SERVER_HOSTNAME:?SERVER_HOSTNAME must be set}
+      OTS_ADMIN_USER: ${OTS_ADMIN_USER:-admin}
+      OTS_ADMIN_PASSWORD: ${OTS_ADMIN_PASSWORD:?OTS_ADMIN_PASSWORD must be set}
+      OTS_ENABLE_MUMBLE_AUTH: "true"
+      OTS_MUMBLE_HOST: mumble
+      OTS_MUMBLE_PORT: 6502
+    ports:
+      - "8089:8089"    # TLS CoT streaming (clients connect here)
+    volumes:
+      - ots_data:/data/opentakserver
+      - certs:/data/opentakserver/certs
+      - ../../server/skitak:/app/skitak:ro  # SkiTAK extensions
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── Nginx (reverse proxy + TLS) ───────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: skitak-nginx
+    restart: unless-stopped
+    depends_on:
+      opentakserver:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/skitak.conf:/etc/nginx/conf.d/skitak.conf:ro
+      - ./nginx/options-ssl.conf:/etc/nginx/options-ssl.conf:ro
+      - certs:/etc/nginx/certs:ro
+      - ../../dashboard/dist:/var/www/dashboard:ro  # built React app
+
+  # ── Mumble / Murmur (voice PTT) ───────────────────────────────────────────
+  mumble:
+    image: mumblevoip/mumble-server:latest
+    container_name: skitak-mumble
+    restart: unless-stopped
+    ports:
+      - "64738:64738"        # TCP + UDP voice
+      - "64738:64738/udp"
+    volumes:
+      - ./mumble/murmur.ini:/etc/mumble/murmur.ini:ro
+      - mumble_data:/data/mumble
+    environment:
+      MURMUR_CONFIG: /etc/mumble/murmur.ini
+
+  # ── MediaMTX (video relay — drones, cameras) ─────────────────────────────
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: skitak-mediamtx
+    restart: unless-stopped
+    ports:
+      - "8554:8554"          # RTSP
+      - "1935:1935"          # RTMP
+      - "8889:8889"          # WebRTC HTTP
+      - "8889:8889/udp"      # WebRTC UDP
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    environment:
+      MTX_PROTOCOLS: tcp
+
+  # ── mbtileserver (offline map tiles) ─────────────────────────────────────
+  mbtileserver:
+    image: consbio/mbtileserver:latest
+    container_name: skitak-tiles
+    restart: unless-stopped
+    volumes:
+      - tile_data:/tilesets
+    command: ["--dir=/tilesets", "--port=8500"]
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  ots_data:
+  certs:
+  mumble_data:
+  tile_data:

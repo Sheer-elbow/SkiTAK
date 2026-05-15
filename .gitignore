@@ -1,0 +1,38 @@
+# Environment — never commit secrets
+docker/.env
+
+# Certificates — generated at runtime
+docker/certs/
+*.p12
+*.pem
+*.key
+
+# Database backups
+backups/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Node / dashboard
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.env.local
+
+# iOS
+ios/SkiTAK.xcodeproj/xcuserdata/
+ios/build/
+ios/DerivedData/
+ios/*.xcarchive
+
+# Map tiles (large binary files — store separately)
+maps/*.mbtiles
+maps/*.gpkg
+
+# OS
+.DS_Store
+Thumbs.db
