@@ -62,14 +62,18 @@ CREATE INDEX IF NOT EXISTS idx_track_points_location
 
 -- Invite tokens for zero-friction iOS onboarding
 CREATE TABLE IF NOT EXISTS skitak_invite_tokens (
-    token           TEXT PRIMARY KEY,
-    session_id      UUID REFERENCES skitak_sessions(id) ON DELETE CASCADE,
-    team_id         UUID REFERENCES skitak_teams(id) ON DELETE CASCADE,
-    team_name       TEXT NOT NULL,
-    team_color      TEXT NOT NULL DEFAULT 'Cyan',
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    expires_at      TIMESTAMPTZ NOT NULL,
-    used_at         TIMESTAMPTZ                      -- NULL = not yet used
+    token                TEXT PRIMARY KEY,
+    session_id           UUID REFERENCES skitak_sessions(id) ON DELETE CASCADE,
+    team_id              UUID REFERENCES skitak_teams(id) ON DELETE CASCADE,
+    team_name            TEXT NOT NULL,
+    team_color           TEXT NOT NULL DEFAULT 'Cyan',
+    created_at           TIMESTAMPTZ DEFAULT NOW(),
+    expires_at           TIMESTAMPTZ NOT NULL,
+    used_at              TIMESTAMPTZ,               -- NULL = not yet used
+    -- Set on first package generation; allows re-download for 2h
+    callsign             TEXT,
+    client_p12_data      BYTEA,
+    package_generated_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_invite_tokens_expires
