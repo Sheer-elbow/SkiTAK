@@ -83,11 +83,16 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      OS_MAPS_API_KEY: ${OS_MAPS_API_KEY:?OS_MAPS_API_KEY must be set}
+      SERVER_HOSTNAME: ${SERVER_HOSTNAME}
     volumes:
-      - ./nginx/skitak.conf:/etc/nginx/conf.d/skitak.conf:ro
+      - ./nginx/skitak.conf.template:/etc/nginx/templates/skitak.conf.template:ro
       - ./nginx/options-ssl.conf:/etc/nginx/options-ssl.conf:ro
+      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
       - certs:/etc/nginx/certs:ro
-      - ../../dashboard/dist:/var/www/dashboard:ro  # built React app
+      - ../../dashboard/dist:/var/www/dashboard:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
   # ── Mumble / Murmur (voice PTT) ───────────────────────────────────────────
   mumble:
