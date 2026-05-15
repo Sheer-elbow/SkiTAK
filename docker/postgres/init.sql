@@ -60,6 +60,21 @@ CREATE INDEX IF NOT EXISTS idx_track_points_session_uid_time
 CREATE INDEX IF NOT EXISTS idx_track_points_location
     ON skitak_track_points USING GIST (location);
 
+-- Invite tokens for zero-friction iOS onboarding
+CREATE TABLE IF NOT EXISTS skitak_invite_tokens (
+    token           TEXT PRIMARY KEY,
+    session_id      UUID REFERENCES skitak_sessions(id) ON DELETE CASCADE,
+    team_id         UUID REFERENCES skitak_teams(id) ON DELETE CASCADE,
+    team_name       TEXT NOT NULL,
+    team_color      TEXT NOT NULL DEFAULT 'Cyan',
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    expires_at      TIMESTAMPTZ NOT NULL,
+    used_at         TIMESTAMPTZ                      -- NULL = not yet used
+);
+
+CREATE INDEX IF NOT EXISTS idx_invite_tokens_expires
+    ON skitak_invite_tokens (expires_at);
+
 -- POI / waypoints overlay
 CREATE TABLE IF NOT EXISTS skitak_pois (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <!-- ── Bundle identity ──────────────────────────────────────────── -->
+    <key>CFBundleIdentifier</key>
+    <string>io.skitak.app</string>
+    <key>CFBundleName</key>
+    <string>SkiTAK</string>
+    <key>CFBundleDisplayName</key>
+    <string>SkiTAK</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+
+    <!-- ── Deep link URL scheme ─────────────────────────────────────── -->
+    <!-- Handles skitak://join/<token> invite links -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>io.skitak.join</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>skitak</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- Associated domains for https://server/join/<token> deep links -->
+    <!-- Add entitlement: associated-domains: applinks:yourdomain.com -->
+
+    <!-- ── Background modes ─────────────────────────────────────────── -->
+    <!-- location: keep GPS running when screen is locked (the core feature) -->
+    <!-- fetch: periodic background refresh                                  -->
+    <!-- remote-notification: receive emergency push notifications           -->
+    <!-- voip: keep network connection alive for CoT stream                  -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>location</string>
+        <string>fetch</string>
+        <string>remote-notification</string>
+        <string>voip</string>
+    </array>
+
+    <!-- ── Location permission descriptions ────────────────────────── -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>SkiTAK uses your location to show your position on your guide's map.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>SkiTAK needs "Always" location access so your guide can see where you are even when your screen is locked.</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>SkiTAK needs "Always" location access so your guide can see where you are even when your screen is locked.</string>
+
+    <!-- ── Microphone (Phase 2 PTT) ─────────────────────────────────── -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>SkiTAK uses your microphone for push-to-talk voice communication with your group.</string>
+
+    <!-- ── Network ──────────────────────────────────────────────────── -->
+    <!-- Allow connecting to local network servers (Pi on hotspot) -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>SkiTAK connects to a local SkiTAK server when internet is unavailable.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_skitak._tcp</string>
+    </array>
+
+    <!-- Allow HTTP to local IPs (for dev / Pi server without HTTPS) -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+        <!-- Production: remove the below and use HTTPS only -->
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>localhost</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+            </dict>
+        </dict>
+    </dict>
+
+    <!-- ── UI ───────────────────────────────────────────────────────── -->
+    <key>UILaunchScreen</key>
+    <dict/>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UIStatusBarStyle</key>
+    <string>UIStatusBarStyleLightContent</string>
+
+</dict>
+</plist>
