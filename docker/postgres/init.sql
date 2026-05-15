@@ -62,18 +62,54 @@ CREATE INDEX IF NOT EXISTS idx_track_points_location
 
 -- Invite tokens for zero-friction iOS onboarding
 CREATE TABLE IF NOT EXISTS skitak_invite_tokens (
-    token           TEXT PRIMARY KEY,
-    session_id      UUID REFERENCES skitak_sessions(id) ON DELETE CASCADE,
-    team_id         UUID REFERENCES skitak_teams(id) ON DELETE CASCADE,
-    team_name       TEXT NOT NULL,
-    team_color      TEXT NOT NULL DEFAULT 'Cyan',
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    expires_at      TIMESTAMPTZ NOT NULL,
-    used_at         TIMESTAMPTZ                      -- NULL = not yet used
+    token                TEXT PRIMARY KEY,
+    session_id           UUID REFERENCES skitak_sessions(id) ON DELETE CASCADE,
+    team_id              UUID REFERENCES skitak_teams(id) ON DELETE CASCADE,
+    team_name            TEXT NOT NULL,
+    team_color           TEXT NOT NULL DEFAULT 'Cyan',
+    created_at           TIMESTAMPTZ DEFAULT NOW(),
+    expires_at           TIMESTAMPTZ NOT NULL,
+    used_at              TIMESTAMPTZ,               -- NULL = not yet used
+    -- Set on first package generation; allows re-download for 2h
+    callsign             TEXT,
+    client_p12_data      BYTEA,
+    package_generated_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_invite_tokens_expires
     ON skitak_invite_tokens (expires_at);
+
+-- Registered clients (persistent across sessions)
+CREATE TABLE IF NOT EXISTS skitak_clients (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    display_name     TEXT NOT NULL,
+    callsign         TEXT NOT NULL UNIQUE,
+    email            TEXT,
+    phone            TEXT,
+    notes            TEXT,
+    created_at       TIMESTAMPTZ DEFAULT NOW(),
+    last_seen_at     TIMESTAMPTZ,
+    -- Enrollment state
+    tak_uid          TEXT,                    -- device UID set when client first connects
+    cert_expires_at  TIMESTAMPTZ,
+    enrolled_at      TIMESTAMPTZ,
+    -- Denormalised stats (updated at session end)
+    total_sessions   INTEGER DEFAULT 0,
+    total_distance_km REAL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_clients_callsign ON skitak_clients (callsign);
+CREATE INDEX IF NOT EXISTS idx_clients_tak_uid  ON skitak_clients (tak_uid);
+
+-- Link table: which clients are in which session teams
+CREATE TABLE IF NOT EXISTS skitak_session_clients (
+    session_id   UUID REFERENCES skitak_sessions(id) ON DELETE CASCADE,
+    team_id      UUID REFERENCES skitak_teams(id) ON DELETE CASCADE,
+    client_id    UUID REFERENCES skitak_clients(id) ON DELETE CASCADE,
+    invite_token TEXT,                        -- the token sent to this client for this session
+    joined_at    TIMESTAMPTZ,                 -- set when client actually connects
+    PRIMARY KEY (session_id, client_id)
+);
 
 -- POI / waypoints overlay
 CREATE TABLE IF NOT EXISTS skitak_pois (

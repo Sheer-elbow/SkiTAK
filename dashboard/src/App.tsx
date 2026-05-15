@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
+import { LiveMapPage } from '@/pages/LiveMapPage'
+import { ClientsPage } from '@/pages/ClientsPage'
 import { Login } from '@/pages/Login'
 import { useStore } from '@/store'
 
@@ -19,14 +21,18 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+
           <Route
-            path="/"
             element={
               <RequireAuth>
                 <AppShell />
               </RequireAuth>
             }
-          />
+          >
+            <Route index element={<LiveMapPage />} />
+            <Route path="clients" element={<ClientsPage />} />
+          </Route>
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
