@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  server:
+    name: Server plugin — lint + tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: skitak
+          POSTGRES_PASSWORD: skitak
+          POSTGRES_DB: skitak_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U skitak -d skitak_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          pip install opentakserver==1.7.11 "psycopg[binary]" pytest ruff
+          pip install ./server
+      - name: Lint
+        run: ruff check server/
+      - name: Tests
+        env:
+          SKITAK_TEST_DATABASE_URI: postgresql+psycopg://skitak:skitak@localhost:5433/skitak_test
+        run: pytest server/tests -v
+
+  compose:
+    name: Docker Compose — config validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose files
+        env:
+          SERVER_HOSTNAME: ci.example.com
+          POSTGRES_PASSWORD: ci-password
+          SECRET_KEY: ci-secret
+          SECURITY_PASSWORD_SALT: ci-salt
+        run: |
+          docker compose -f docker/docker-compose.yml config -q
+          docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml config -q
+          docker compose -f docker/docker-compose.yml -f docker/docker-compose.pi.yml config -q
+      - name: Build server image
+        run: docker build -f docker/opentakserver/Dockerfile .
+
+  dashboard:
+    name: Dashboard — typecheck + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - run: npm run build

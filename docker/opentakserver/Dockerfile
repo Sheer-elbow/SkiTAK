@@ -1,35 +1,37 @@
+# Build context is the repository root (see docker-compose.yml) so the
+# skitak plugin package under server/ can be installed into the image.
 FROM python:3.11-slim
 
-# System dependencies
+# openssl: OTS shells out to it for CA/cert generation
+# curl: container health checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     openssl \
-    libssl-dev \
-    libpq-dev \
-    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install OpenTAKServer and PostgreSQL driver
-# Pin the version so builds are reproducible — bump deliberately
+# Pin the OTS version so builds are reproducible — bump deliberately.
+# psycopg (v3) matches OTS's postgresql+psycopg:// SQLAlchemy driver.
 RUN pip install --no-cache-dir \
     opentakserver==1.7.11 \
-    psycopg2-binary \
-    gunicorn
+    "psycopg[binary]"
 
-# SkiTAK extensions package (mounted in at runtime in dev, copied in prod)
-COPY skitak_extensions/ /app/skitak/
+# SkiTAK plugin — discovered by OTS via the opentakserver.plugin entry point
+COPY server/ /opt/skitak-server/
+RUN pip install --no-cache-dir /opt/skitak-server
 
-COPY entrypoint.sh /entrypoint.sh
+COPY docker/opentakserver/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Persistent data: certs, uploads, config
+# Persistent data: config.yml, CA, uploads, logs — shared by all three processes
+ENV OTS_DATA_FOLDER=/data/opentakserver
 VOLUME ["/data/opentakserver"]
 
-# CoT TLS streaming
-EXPOSE 8089
-# Flask API (internal, Nginx proxies this)
-EXPOSE 8080
+# 8081: Flask API + Socket.IO (internal, Nginx proxies this)
+# 8089: CoT TLS streaming (eud_handler --ssl)
+EXPOSE 8081 8089
 
 ENTRYPOINT ["/entrypoint.sh"]
+# Overridden per compose service: opentakserver | eud_handler --ssl | cot_parser
+CMD ["opentakserver"]
