@@ -9,11 +9,12 @@ and are token-gated instead.
 from __future__ import annotations
 
 from flask import Blueprint, Response, jsonify, request
-from flask_security import auth_required
+from flask_security import auth_required, current_user
 from opentakserver.extensions import db
 
 from .common import parse_uuid, safe_filename, serialise
 from .enrollment import TOKEN_TTL_HOURS, create_invite_token
+from .groups import ensure_team_group, revoke_session_devices
 from .sessions import (
     create_session,
     create_team,
@@ -65,11 +66,20 @@ def start_session_endpoint(session_id: str):
 @bp.post("/sessions/<session_id>/end")
 @auth_required()
 def end_session_endpoint(session_id: str):
+    """
+    End a session. By default this also deactivates the device accounts that
+    were enrolled through this session's invites, so ex-clients stop having
+    live access — pass {"revoke_devices": false} to keep them connected.
+    """
     sid = parse_uuid(session_id)
     if not sid:
         return jsonify({"error": "Session not found"}), 404
+    body = request.get_json(silent=True) or {}
     end_session(db.session, sid)
-    return jsonify({"status": "ended"}), 200
+    revoked: list[str] = []
+    if body.get("revoke_devices", True):
+        revoked = revoke_session_devices(sid)
+    return jsonify({"status": "ended", "revoked_devices": revoked}), 200
 
 
 @bp.get("/sessions/<session_id>/summary")
@@ -101,6 +111,9 @@ def create_team_endpoint(session_id: str):
         name=body["name"],
         color=body.get("color", "Cyan"),
     )
+    # Back the team with an OTS group and put the creating guide in it, so
+    # enrolled devices and the guide share CoT visibility.
+    ensure_team_group(parse_uuid(team_id), guide_user=current_user)
     return jsonify({"team_id": team_id}), 201
 
 

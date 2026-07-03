@@ -29,6 +29,7 @@ import base64
 import io
 import os
 import random
+import re
 import secrets
 import uuid
 import zipfile
@@ -52,6 +53,9 @@ TOKEN_TTL_HOURS = 24
 PACKAGE_REDOWNLOAD_HOURS = 2   # how long a generated package can be re-downloaded
 TOKEN_RETENTION_DAYS = 7       # expired tokens are purged after this
 
+# Callsigns become OTS usernames and CA file paths — letters/digits/._ only
+CALLSIGN_RE = re.compile(r"^[A-Za-z0-9._]{2,64}$")
+
 
 # ── Token management ──────────────────────────────────────────────────────
 
@@ -61,15 +65,22 @@ def create_invite_token(
     team_id: uuid.UUID | None,
     team_name: str,
     team_color: str,
+    callsign: str | None = None,
 ) -> str:
+    """
+    Mint a single-use invite. If `callsign` is set (invites for known roster
+    clients), the enrolling device gets that identity — keeping the client's
+    history and OTS user account stable across sessions. Otherwise a random
+    callsign is generated at redemption.
+    """
     _cleanup_stale_tokens(db)
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(hours=TOKEN_TTL_HOURS)
     db.execute(
         text("""
             INSERT INTO skitak_invite_tokens
-                (token, session_id, team_id, team_name, team_color, expires_at)
-            VALUES (:token, :session_id, :team_id, :team_name, :team_color, :expires_at)
+                (token, session_id, team_id, team_name, team_color, expires_at, callsign)
+            VALUES (:token, :session_id, :team_id, :team_name, :team_color, :expires_at, :callsign)
         """),
         {
             "token": token,
@@ -78,6 +89,7 @@ def create_invite_token(
             "team_name": team_name,
             "team_color": team_color,
             "expires_at": expires_at,
+            "callsign": callsign,
         },
     )
     db.commit()
@@ -166,9 +178,10 @@ def enroll_json(token: str):
     if not invite or invite["used_at"] is not None:
         return jsonify({"error": "Invalid or expired invite link"}), 410
 
-    callsign = _generate_callsign()
+    callsign = _enrollment_callsign(invite)
     try:
         client_p12 = _issue_p12(callsign)
+        _create_device_identity(callsign, invite)
     except Exception as e:
         logger.error(f"SkiTAK: cert generation failed: {e}")
         return jsonify({"error": "Certificate generation failed"}), 500
@@ -223,9 +236,10 @@ def enroll_package(token: str):
         ), 410
 
     # First download: issue cert and consume the token
-    callsign = _generate_callsign()
+    callsign = _enrollment_callsign(invite)
     try:
         client_p12 = _issue_p12(callsign)
+        _create_device_identity(callsign, invite)
     except Exception as e:
         logger.error(f"SkiTAK: cert generation failed: {e}")
         return jsonify({"error": "Certificate generation failed"}), 500
@@ -340,6 +354,25 @@ def _config_pref(callsign: str, team_name: str, team_color: str, server_host: st
            </preference>
         </preferences>
     """)
+
+
+def _enrollment_callsign(invite: dict[str, Any]) -> str:
+    """Preset callsign from the invite (roster clients) or a fresh random one."""
+    preset = invite.get("callsign")
+    if preset and CALLSIGN_RE.match(preset):
+        return preset
+    return _generate_callsign()
+
+
+def _create_device_identity(callsign: str, invite: dict[str, Any]) -> None:
+    """
+    The cert alone is not enough: eud_handler authenticates the TLS client by
+    matching the cert CN to an OTS username, and team visibility comes from
+    OTS group membership. Create both here.
+    """
+    from .groups import create_device_user
+
+    create_device_user(callsign, team_id=invite.get("team_id"))
 
 
 # ── Certificate issuance (delegated to the OTS CA) ────────────────────────

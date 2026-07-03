@@ -35,6 +35,7 @@ class SkiTAKPlugin(Plugin):
         self.distro = "skitak"
         self.blueprint = _build_blueprint()
         self._enabled = False
+        self._ingest_worker = None
 
     # ── Plugin contract ───────────────────────────────────────────────────
 
@@ -77,13 +78,28 @@ class SkiTAKPlugin(Plugin):
                 # Never block startup on this; the default-password warning below still fires
                 logger.error(f"SkiTAK: failed to set administrator password: {e}")
 
+        try:
+            from .ingest import TrackIngestWorker
+
+            self._ingest_worker = TrackIngestWorker(app)
+            self._ingest_worker.start()
+        except Exception as e:
+            logger.error(f"SkiTAK: failed to start track ingest worker: {e}")
+            logger.error(traceback.format_exc())
+
         logger.info(f"SkiTAK plugin v{self.metadata.get('version')} activated")
 
     def stop(self) -> None:
         self._enabled = False
+        if self._ingest_worker is not None:
+            self._ingest_worker.stop()
 
     def get_info(self) -> dict | None:
-        return {**self.metadata, "enabled": self._enabled}
+        return {
+            **self.metadata,
+            "enabled": self._enabled,
+            "track_ingest_running": bool(self._ingest_worker and self._ingest_worker.running),
+        }
 
     # ── Startup work ──────────────────────────────────────────────────────
 

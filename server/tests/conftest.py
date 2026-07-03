@@ -45,8 +45,11 @@ def app():
     )
     db.init_app(app)
 
-    # Minimal Flask-Security setup so @auth_required behaves like it does
-    # inside OTS (401/redirect instead of blowing up).
+    # Real OTS models + Flask-Security so @auth_required and the group/user
+    # wiring behave exactly as they do inside OpenTAKServer.
+    import importlib
+    import pkgutil
+
     import sqlalchemy.exc
     from flask_security import Security, SQLAlchemyUserDatastore
     from flask_security.models import fsqla_v3 as fsqla
@@ -56,13 +59,16 @@ def app():
     except sqlalchemy.exc.InvalidRequestError:
         pass
 
-    class Role(db.Model, fsqla.FsRoleMixin):
-        pass
+    import opentakserver.models as ots_models
 
-    class User(db.Model, fsqla.FsUserMixin):
-        pass
+    for module in pkgutil.iter_modules(ots_models.__path__):
+        importlib.import_module(f"opentakserver.models.{module.name}")
 
-    app.security = Security(app, SQLAlchemyUserDatastore(db, User, Role))
+    from opentakserver.models.role import Role
+    from opentakserver.models.user import User
+    from opentakserver.models.WebAuthn import WebAuthn
+
+    app.security = Security(app, SQLAlchemyUserDatastore(db, User, Role, WebAuthn))
 
     from skitak.plugin import SkiTAKPlugin
 
@@ -80,10 +86,15 @@ def app():
 
 @pytest.fixture()
 def session(app):
-    """A DB session with all SkiTAK tables emptied."""
+    """A DB session with all SkiTAK tables (and OTS group tables) emptied."""
+    from opentakserver.models.Group import Group
+    from opentakserver.models.GroupUser import GroupUser
+
     with app.app_context():
         for table in TABLES:
             db.session.execute(text(f"DELETE FROM {table}"))
+        db.session.query(GroupUser).delete()
+        db.session.query(Group).delete()
         db.session.commit()
         yield db.session
         db.session.rollback()

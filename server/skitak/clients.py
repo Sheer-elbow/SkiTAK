@@ -8,6 +8,7 @@ mint enrollment credentials).
 from __future__ import annotations
 
 import random
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -19,7 +20,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .common import parse_uuid, serialise
-from .enrollment import TOKEN_TTL_HOURS, create_invite_token
+from .enrollment import CALLSIGN_RE, TOKEN_TTL_HOURS, create_invite_token
+from .groups import deactivate_device_user
 
 bp = Blueprint("skitak_clients", __name__, url_prefix="/api/skitak/clients")
 
@@ -49,6 +51,10 @@ def create_client():
         return jsonify({"error": "display_name is required"}), 400
 
     callsign = body.get("callsign") or _generate_callsign(body["display_name"])
+    if not CALLSIGN_RE.match(callsign):
+        return jsonify({
+            "error": "callsign must be 2-64 characters: letters, digits, '.' or '_'"
+        }), 400
 
     # Ensure callsign is unique — append a number if taken
     base = callsign
@@ -154,12 +160,18 @@ def update_client(client_id: str):
 @bp.delete("/<client_id>")
 @auth_required()
 def delete_client(client_id: str):
+    """Delete a client and revoke their device access (deactivates the OTS
+    user their certificate authenticates as)."""
     cid = parse_uuid(client_id)
     if not cid:
         return jsonify({"error": "Client not found"}), 404
+    client = _fetch_client(db.session, cid)
+    if not client:
+        return jsonify({"error": "Client not found"}), 404
+    revoked = deactivate_device_user(client["callsign"])
     db.session.execute(text("DELETE FROM skitak_clients WHERE id = :id"), {"id": cid})
     db.session.commit()
-    return jsonify({"status": "deleted"})
+    return jsonify({"status": "deleted", "device_access_revoked": revoked})
 
 
 # ── Enrollment ────────────────────────────────────────────────────────────
@@ -187,6 +199,7 @@ def generate_enrollment(client_id: str):
         team_id=team_id,
         team_name=team_name,
         team_color=team_color,
+        callsign=client["callsign"],
     )
 
     # Link client to session if session provided
@@ -240,7 +253,10 @@ def assign_clients():
         client = _fetch_client(db.session, cid) if cid else None
         if not client:
             continue
-        token = create_invite_token(db.session, session_id, team_id, team_name, team_color)
+        token = create_invite_token(
+            db.session, session_id, team_id, team_name, team_color,
+            callsign=client["callsign"],
+        )
         db.session.execute(text("""
             INSERT INTO skitak_session_clients (session_id, team_id, client_id, invite_token)
             VALUES (:session_id, :team_id, :client_id, :token)
@@ -270,8 +286,14 @@ def _fetch_client(db_session: Session, client_id: uuid.UUID) -> dict[str, Any] |
 
 
 def _generate_callsign(display_name: str) -> str:
-    """Derive a callsign from the client's name — e.g. 'Alice Smith' → 'AliceS'."""
+    """Derive a callsign from the client's name — e.g. 'Alice Smith' → 'AliceS'.
+    Restricted to characters valid in OTS usernames and CA file paths."""
     parts = display_name.strip().split()
     if len(parts) >= 2:
-        return f"{parts[0].capitalize()}{parts[1][0].upper()}"
-    return parts[0].capitalize() if parts else f"Client{random.randint(10, 99)}"
+        raw = f"{parts[0].capitalize()}{parts[1][0].upper()}"
+    elif parts:
+        raw = parts[0].capitalize()
+    else:
+        raw = ""
+    cleaned = re.sub(r"[^A-Za-z0-9._]", "", raw)
+    return cleaned if len(cleaned) >= 2 else f"Client{random.randint(10, 99)}"
