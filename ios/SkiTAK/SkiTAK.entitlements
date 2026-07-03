@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Push notifications (emergency alerts). Xcode flips this to
+         "production" automatically for App Store / TestFlight builds. -->
+    <key>aps-environment</key>
+    <string>development</string>
+
+    <!-- HTTPS deep links: https://<your-domain>/join/<token> opens the app.
+         Replace with your real domain (and serve the AASA file from it). -->
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+        <string>applinks:skitak.yourdomain.com</string>
+    </array>
+</dict>
+</plist>

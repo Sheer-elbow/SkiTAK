@@ -22,8 +22,9 @@ final class LocationManager: NSObject, ObservableObject {
         manager.distanceFilter = 5          // update every 5 metres minimum
         manager.pausesLocationUpdatesAutomatically = false
         manager.showsBackgroundLocationIndicator = true
-        // Critical: allow updates when screen is locked
-        manager.allowsBackgroundLocationUpdates = true
+        // allowsBackgroundLocationUpdates is set once authorization lands
+        // (see locationManagerDidChangeAuthorization) — setting it without
+        // Always authorization raises an exception.
     }
 
     func requestPermission() {
@@ -49,16 +50,20 @@ final class LocationManager: NSObject, ObservableObject {
 extension LocationManager: CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.last,
-              loc.horizontalAccuracy >= 0,
-              loc.horizontalAccuracy < 100 else { return }
+        guard let loc = locations.last, loc.horizontalAccuracy >= 0 else { return }
+        // Always keep the latest fix (an SOS in a gorge needs the bad fix
+        // rather than none); only suppress *sending* very poor fixes.
         location = loc
+        guard loc.horizontalAccuracy < 100 else { return }
         onLocation?(loc)
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
         if authorizationStatus == .authorizedAlways {
+            // Safe to enable now: Always authorization + location background
+            // mode (Info.plist) are both in place.
+            manager.allowsBackgroundLocationUpdates = true
             startTracking()
         }
     }

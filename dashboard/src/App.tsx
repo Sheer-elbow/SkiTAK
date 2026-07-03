@@ -1,8 +1,10 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { checkAuth } from '@/api'
 import { AppShell } from '@/components/layout/AppShell'
-import { LiveMapPage } from '@/pages/LiveMapPage'
 import { ClientsPage } from '@/pages/ClientsPage'
+import { LiveMapPage } from '@/pages/LiveMapPage'
 import { Login } from '@/pages/Login'
 import { useStore } from '@/store'
 
@@ -11,11 +13,29 @@ const queryClient = new QueryClient({
 })
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useStore((s) => s.isAuthenticated)
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />
+  const authStatus = useStore((s) => s.authStatus)
+  if (authStatus === 'checking') {
+    return (
+      <div className="min-h-full flex items-center justify-center text-gray-400 text-sm">
+        Connecting…
+      </div>
+    )
+  }
+  return authStatus === 'authenticated' ? <>{children}</> : <Navigate to="/login" replace />
 }
 
 export function App() {
+  const setAuth = useStore((s) => s.setAuth)
+  const clearAuth = useStore((s) => s.clearAuth)
+
+  // Restore the Flask-Security session cookie on page load
+  useEffect(() => {
+    checkAuth().then((username) => {
+      if (username) setAuth(username)
+      else clearAuth()
+    })
+  }, [])
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>

@@ -1,12 +1,16 @@
 """
 Track storage — writes CoT position events to PostGIS.
-Hooked into OTS's CoT pipeline via an event subscriber.
+
+store_track_point() is the persistence primitive; hooking it into OTS's CoT
+pipeline (RabbitMQ firehose exchange) is Phase 1 work — see PLAN.md.
 """
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timezone
 from typing import Any
+from xml.sax.saxutils import escape
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -55,7 +59,7 @@ def store_track_point(db: Session, cot_event: dict[str, Any]) -> None:
 
 def get_session_track(
     db: Session,
-    session_id: str,
+    session_id: uuid.UUID,
     tak_uid: str,
 ) -> list[dict[str, Any]]:
     """Return ordered track points for a single device in a session."""
@@ -83,7 +87,7 @@ def get_session_track(
 
 def export_gpx(
     db: Session,
-    session_id: str,
+    session_id: uuid.UUID,
     tak_uid: str,
     callsign: str,
 ) -> str:
@@ -95,7 +99,7 @@ def export_gpx(
     trkpts = "\n".join(
         f'    <trkpt lat="{p["lat"]}" lon="{p["lon"]}">'
         f'<ele>{p["altitude_m"] or 0:.1f}</ele>'
-        f'<time>{p["recorded_at"].isoformat()}</time>'
+        f'<time>{_iso(p["recorded_at"])}</time>'
         f'</trkpt>'
         for p in points
     )
@@ -104,9 +108,15 @@ def export_gpx(
 <gpx version="1.1" creator="SkiTAK"
      xmlns="http://www.topografix.com/GPX/1/1">
   <trk>
-    <name>{callsign}</name>
+    <name>{escape(callsign)}</name>
     <trkseg>
 {trkpts}
     </trkseg>
   </trk>
 </gpx>"""
+
+
+def _iso(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)

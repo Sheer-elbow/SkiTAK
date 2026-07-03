@@ -44,16 +44,17 @@ final class DeepLinkHandler: ObservableObject {
             let clientP12 = Data(base64Encoded: payload.clientP12Base64)!
             try CertificateManager.shared.importP12(data: clientP12, passphrase: payload.p12Passphrase)
 
-            // Persist config
+            // Persist config — prefer the server-declared CoT address
+            let cotHost = payload.serverAddress ?? serverHost
             cotClient.callsign = payload.callsign
             cotClient.teamName = payload.teamName
-            cotClient.serverAddress = serverHost
+            cotClient.serverAddress = cotHost
             UserDefaults.standard.set(payload.callsign, forKey: "skitak.callsign")
             UserDefaults.standard.set(payload.teamName, forKey: "skitak.team")
-            UserDefaults.standard.set(serverHost, forKey: "skitak.server")
+            UserDefaults.standard.set(cotHost, forKey: "skitak.server")
 
             // Connect
-            cotClient.connect(host: serverHost)
+            cotClient.connect(host: cotHost, port: UInt16(payload.serverPort ?? 8089))
             didEnroll = true
 
         } catch {
@@ -97,7 +98,11 @@ struct EnrollmentPayload: Decodable {
     let caCertBase64: String
     let clientP12Base64: String
     let p12Passphrase: String
-    let sessionId: String
+    let sessionId: String?
+    /// Authoritative CoT endpoint from the server (may differ from the URL
+    /// the invite was opened on, e.g. behind a proxy)
+    let serverAddress: String?
+    let serverPort: Int?
 }
 
 enum EnrollError: LocalizedError {

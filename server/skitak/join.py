@@ -8,9 +8,11 @@ When a client taps the invite link:
       1. Download SkiTAK app (App Store)
       2. Download enrollment package for iTAK/ATAK
 """
-from flask import Blueprint, render_template_string, request
+from flask import Blueprint, abort, render_template_string
 
-bp = Blueprint("join", __name__, url_prefix="/join")
+from .common import valid_token
+
+bp = Blueprint("skitak_join", __name__, url_prefix="/join")
 
 _PAGE = """<!doctype html>
 <html lang="en">
@@ -85,4 +87,7 @@ _PAGE = """<!doctype html>
 
 @bp.get("/<token>")
 def join_page(token: str):
+    # Tokens are URL-safe base64 — anything else never reaches the template
+    if not valid_token(token):
+        abort(404)
     return render_template_string(_PAGE, token=token)

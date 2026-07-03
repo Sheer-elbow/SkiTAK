@@ -1,5 +1,6 @@
 # Development overrides — use with:
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# (or: make dev)
 
 services:
 
@@ -9,23 +10,12 @@ services:
 
   rabbitmq:
     ports:
-      - "5672:5672"          # AMQP
-      - "15672:15672"        # management UI at http://localhost:15672
+      - "15672:15672"        # management UI at http://localhost:15672 (guest/guest)
 
   opentakserver:
     ports:
-      - "8080:8080"          # Flask API direct (bypass Nginx)
-      - "8088:8088"          # unencrypted CoT (dev only)
+      - "8081:8081"          # Flask API direct (bypass Nginx)
     environment:
       OTS_DEBUG: "true"
-      OTS_LOG_LEVEL: DEBUG
-    volumes:
-      - ../../server:/app/server  # hot reload server code
-
-  nginx:
-    volumes:
-      - ../../dashboard/src:/var/www/dashboard/src  # serve unbuilt for dev proxy
-
-  mediamtx:
-    ports:
-      - "9997:9997"          # MediaMTX API (dev)
+    # The skitak plugin is pip-installed into the image; after changing
+    # server/skitak/* rebuild with:  make build && make dev

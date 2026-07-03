@@ -17,35 +17,40 @@ Thin SwiftUI native wrapper providing:
 
 ## Setting Up the Xcode Project
 
-1. Open Xcode → **File → New → Project → App**
-2. Set:
-   - Product Name: `SkiTAK`
-   - Bundle Identifier: `io.skitak.app`
-   - Interface: SwiftUI
-   - Language: Swift
-3. Delete the auto-generated `ContentView.swift` and `<App>.swift`
-4. Drag all `.swift` files from `ios/SkiTAK/` into the project (preserving folder structure)
-5. Replace the generated `Info.plist` with the one in `ios/SkiTAK/Info.plist`
-
-## Required Capabilities (Xcode → Target → Signing & Capabilities)
-
-| Capability | Setting |
-|-----------|---------|
-| Background Modes | ✅ Location updates, Remote notifications, Voice over IP, Background fetch |
-| Push Notifications | ✅ |
-| Associated Domains | `applinks:yourdomain.com` (for HTTPS deep links) |
-| Keychain Sharing | Optional (for shared keychain groups) |
-
-## Testing Without a Server
-
-Run the Docker Compose stack locally:
+The project file is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen):
 
 ```bash
-make dev   # starts on localhost:8080
+brew install xcodegen
+cd ios
+xcodegen generate
+open SkiTAK.xcodeproj
 ```
 
-In the app, the deep link can be simulated by setting `skitak.server` in UserDefaults
-to `localhost` and manually importing a test P12 cert.
+Then in Xcode → Target → Signing & Capabilities:
+
+1. Select your development **Team** (signing is set to Automatic)
+2. Edit `SkiTAK/SkiTAK.entitlements` — replace `skitak.yourdomain.com`
+   with your real domain for HTTPS deep links (or remove the associated
+   domains entry while testing with the `skitak://` scheme only)
+
+Background modes, location permission strings, and the URL scheme are already
+configured in `SkiTAK/Info.plist`; push + associated domains live in the
+entitlements file.
+
+## Testing Against a Local Server
+
+Run the Docker Compose stack (`make dev`) and make sure the Mac and the
+iPhone share a network. Create a session + invite via the dashboard, then
+open the invite link on the phone — enrollment installs the certificate into
+the Keychain and connects to port 8089. Test on a **physical device**:
+background location does not behave realistically in the simulator.
+
+## Offline Behaviour
+
+`EventQueue` persists undeliverable CoT events to disk: position updates are
+kept up to the most recent 500, and emergency (SOS) events are never dropped.
+The queue is flushed in order whenever the TLS connection comes back, and an
+SOS triggered while offline also forces an immediate reconnect attempt.
 
 ## Distribution
 

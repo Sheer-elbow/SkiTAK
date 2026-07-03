@@ -6,7 +6,7 @@ import clsx from 'clsx'
 export function ChatPanel() {
   const messages = useStore((s) => s.messages)
   const clients = useStore((s) => s.clients)
-  const currentUserUid = useStore((s) => s.currentUserUid)
+  const currentUserUid = useStore((s) => s.currentUser)
 
   if (messages.length === 0) {
     return (

@@ -59,12 +59,13 @@ db-backup:      ## Dump the database to backups/skitak-$(date).dump
 		> backups/skitak-$$(date +%Y%m%d-%H%M%S).dump
 	@echo "Backup saved to backups/"
 
-# ── Certs and enrollment ──────────────────────────────────────────────────
+# ── Health ────────────────────────────────────────────────────────────────
 
-enroll:         ## Generate an enrollment data package for a new user
-	@read -p "Callsign: " cs; \
-	$(COMPOSE) --env-file docker/.env exec opentakserver \
-		opentakserver --generate-enrollment --callsign "$$cs"
+smoke:          ## Check that the API and plugin are up
+	@curl -fsS http://localhost:8081/api/health >/dev/null 2>&1 \
+		&& echo "OTS API:        ok" \
+		|| curl -fsSk https://localhost/api/health >/dev/null && echo "OTS API:        ok (via nginx)"
+	@curl -fsSk https://localhost/api/skitak/health >/dev/null && echo "SkiTAK plugin:  ok"
 
 # ── Cleanup ───────────────────────────────────────────────────────────────
 

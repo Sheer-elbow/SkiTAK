@@ -1,12 +1,9 @@
+import { request } from './http'
+
 const BASE = '/api/skitak/clients'
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-  return res.json() as Promise<T>
+function req<T>(path: string, init?: RequestInit): Promise<T> {
+  return request<T>(`${BASE}${path}`, init)
 }
 
 export interface ClientRecord {

@@ -3,8 +3,24 @@
 ## Prerequisites
 
 - Docker Engine 24+ and Docker Compose v2
-- A domain name pointing to your server (for production TLS)
-- Ports open: `443`, `8089`, `64738` (TCP+UDP for Mumble)
+- A domain name pointing to your server (for production)
+- Ports open: `443`, `8089` (plus `64738` TCP+UDP if the voice profile is enabled)
+
+## Architecture at a glance
+
+The stack runs OpenTAKServer 1.7.x as three processes from one image, the way
+upstream's installer does with systemd:
+
+| Service | Role | Exposure |
+|---|---|---|
+| `opentakserver` | Flask API, Socket.IO, plugin host (SkiTAK endpoints) | internal `:8081`, proxied by Nginx |
+| `eud-handler` | CoT TLS streaming listener for TAK clients | public `:8089` |
+| `cot-parser` | CoT parsing/routing worker | internal only |
+| `postgres` (PostGIS), `rabbitmq`, `nginx`, `mbtileserver` | supporting services | only `nginx` is public |
+
+The SkiTAK extensions are a pip-installed OTS plugin (`server/`), discovered via
+the `opentakserver.plugin` entry point. It applies its own database schema at
+startup, so schema changes ship with the image.
 
 ## Quick Start
 
@@ -16,37 +32,49 @@ cd SkiTAK
 # 2. Run setup (creates docker/.env from template)
 make setup
 
-# 3. Edit your environment — at minimum set these:
-#    SERVER_HOSTNAME, POSTGRES_PASSWORD, RABBITMQ_PASSWORD,
-#    OTS_SECRET_KEY, OTS_ADMIN_PASSWORD
+# 3. Edit your environment — all of these are required:
+#    SERVER_HOSTNAME, POSTGRES_PASSWORD, SECRET_KEY,
+#    SECURITY_PASSWORD_SALT, SKITAK_ADMIN_PASSWORD
 nano docker/.env
 
-# 4. Start the stack
+# 4. Build the dashboard (Nginx serves the static build)
+make build-dashboard
+
+# 5. Start the stack
 make up
 
-# 5. Watch the logs until healthy
+# 6. Watch the logs until healthy, then smoke-test
 make logs
+make smoke
 ```
 
-The server is ready when you see `opentakserver` report `Listening on :8089`.
+First boot takes a minute or two: OTS runs its database migrations, creates its
+certificate authority, and issues the server certificate that Nginx then uses
+for HTTPS. Log in at `https://your-server/` as `administrator` with the
+password you set in `SKITAK_ADMIN_PASSWORD`.
+
+> The bundled TLS setup uses the OTS CA (self-signed chain). Browsers will
+> warn until you either install the CA cert or supply Let's Encrypt
+> certificates in `docker/nginx/skitak.conf`.
 
 ## Connecting Your First Device
 
-### iTAK / ATAK (recommended)
+### iTAK / ATAK via invite link (recommended)
 
-1. In the admin UI (`https://your-server/`), go to **Users → New User**
-2. Set a callsign and password
-3. Click **Generate Enrollment Package** — downloads a `.zip`
-4. On the device: open iTAK → Import → select the `.zip`
-5. The server connection, certificates, and map sources are configured automatically
+1. Create a session and team via the dashboard (or the `/api/skitak` API)
+2. Request an invite: `GET /api/skitak/sessions/<id>/teams/<team>/invite` (authenticated)
+3. Share the returned `https://server/join/<token>` link with the client
+4. On the device the link offers "Open in SkiTAK app" or a TAK data package
+   download that iTAK/ATAK imports in one tap — server, certificates, callsign
+   and team colour are configured automatically
 
-### Deep Link (for clients — zero friction)
+Invite tokens are single-use and expire after 24 h; a generated package can be
+re-downloaded for 2 h in case the first import fails.
 
-1. Create a session in the guide dashboard
-2. Add teams, set team colours
-3. Click **Invite** on a team → copy the link
-4. Share the link via WhatsApp/AirDrop/SMS to clients
-5. Client taps the link → SkiTAK iOS app opens → certificate installed → tracking starts
+### Manual enrollment
+
+The standard OTS flows (certificate enrollment from ATAK/iTAK with username +
+password, or admin-generated data packages from the OTS web UI) also work.
 
 ## Deployment Targets
 
@@ -54,63 +82,84 @@ The server is ready when you see `opentakserver` report `Listening on :8089`.
 
 Any 2-core / 4 GB RAM Linux VPS (Hetzner CX22, DigitalOcean Basic, AWS t3.small).
 
-Set `SSL_MODE=letsencrypt` in `.env` and ensure port 80 is open for ACME challenge.
-
 ### Raspberry Pi 5 (small groups / on-site)
 
 ```bash
 make pi
 ```
 
-Uses `docker-compose.pi.yml` which:
-- Sets memory limits appropriate for 4 GB RAM
-- Enables mesh SA multicast for local WiFi
-- Optionally enables Meshtastic LoRa gateway
+Applies memory limits suitable for 4 GB RAM. Connect a travel router to create
+a dedicated WiFi hotspot; the Pi acts as both hotspot and server with no
+internet. The Meshtastic LoRa gateway is gated behind the `mesh` profile until
+the gateway bridge lands (Phase 3).
 
-Connect a TP-Link travel router to create a dedicated WiFi hotspot.
-The Pi acts as both hotspot and server — works with no internet.
-
-### Off-grid / Backcountry
-
-Same as Pi setup, plus a Meshtastic LoRa radio on `/dev/ttyUSB0`.
+### Optional profiles
 
 ```bash
-MESHTASTIC_PORT=/dev/ttyUSB0 make pi
-```
+# Standalone Mumble voice server (no OTS auth integration yet — OTS 1.7.x can
+# only reach a Mumble authenticator on localhost)
+docker compose --profile voice ... up -d
 
-Position updates flow: device → LoRa radio → Meshtastic gateway → OTS → all connected devices.
+# MediaMTX video relay — configure stream auth in docker/mediamtx/mediamtx.yml
+# BEFORE enabling this on a public host
+docker compose --profile video ... up -d
+```
 
 ## Firewall Rules
 
 ```
 # Required
-TCP 443    — HTTPS (web dashboard + Marti API)
+TCP 443    — HTTPS (dashboard, API, enrollment)
 TCP 8089   — TLS CoT streaming (TAK clients)
-TCP+UDP 64738 — Mumble voice
+
+# Optional
+TCP+UDP 64738 — Mumble voice (voice profile only)
 
 # NOT exposed (internal Docker network only)
 TCP 5432   — PostgreSQL
 TCP 5672   — RabbitMQ
-TCP 8080   — OTS internal API
-TCP 8088   — Unencrypted CoT (never expose)
+TCP 8081   — OTS API (Nginx proxies it)
 ```
 
 ## Backup
 
 ```bash
-# Daily database backup
+# Database dump to backups/
 make db-backup
 
-# To restore
-docker compose exec -T postgres psql -U skitak skitak < backups/skitak-YYYYMMDD.dump
+# Also back up the ots_data volume — it holds the CA. Losing it means
+# re-enrolling every device.
+docker run --rm -v skitak_ots_data:/data -v "$PWD/backups":/backup alpine \
+    tar czf /backup/ots-data-$(date +%Y%m%d).tar.gz -C /data .
 ```
 
 ## Updating
 
 ```bash
 git pull
-make build
+make build build-dashboard
 make up
 ```
 
-OTS runs database migrations automatically on startup.
+OTS runs its database migrations automatically on startup, and the SkiTAK
+plugin applies its own schema changes idempotently.
+
+## Device access and revocation
+
+Every enrolled device authenticates with a client certificate whose CN maps
+to an OTS user account. Access is revoked by deactivating that account, which
+happens automatically when:
+
+- a session ends (`POST .../end` — pass `{"revoke_devices": false}` to opt out)
+- a client is deleted from the roster
+
+A revoked device's next connection attempt is refused even though its
+certificate is still within its validity period. Re-enrolling the same
+client reactivates their account.
+
+## Known limitations
+
+- Mumble/OTS auth integration blocked on upstream (hardcoded localhost Ice address)
+- RabbitMQ runs with guest/guest on the internal network only — OTS builds its
+  Socket.IO broker URL without credentials
+- GeoChat in the dashboard is read-only scaffolding (Phase 2)
