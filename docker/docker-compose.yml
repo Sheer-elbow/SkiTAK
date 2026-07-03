@@ -124,11 +124,19 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      # Optional: enables the /os-tiles/ proxy (UK Ordnance Survey maps).
+      # Without a key the dashboard falls back to OpenTopoMap.
+      OS_MAPS_API_KEY: ${OS_MAPS_API_KEY:-}
+      SERVER_HOSTNAME: ${SERVER_HOSTNAME}
     volumes:
-      - ./nginx/skitak.conf:/etc/nginx/conf.d/skitak.conf:ro
+      - ./nginx/skitak.conf.template:/etc/nginx/templates/skitak.conf.template:ro
+      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
       - ./nginx/options-ssl.conf:/etc/nginx/options-ssl.conf:ro
       - ots_data:/etc/skitak/ots:ro                # OTS CA + server cert
       - ../dashboard/dist:/var/www/dashboard:ro    # built React app (make build-dashboard)
+    # Renders the config template (injects the OS Maps key) then starts nginx
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
   # ── mbtileserver (offline map tiles) ─────────────────────────────────────
   mbtileserver:
