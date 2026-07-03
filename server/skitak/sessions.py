@@ -54,17 +54,34 @@ def list_sessions(db: Session, limit: int = 50) -> list[dict[str, Any]]:
     sessions = [dict(r) for r in rows]
 
     if sessions:
+        session_ids = [s["id"] for s in sessions]
         teams = db.execute(
             text("""
                 SELECT id, session_id, name, color
                 FROM skitak_teams
                 WHERE session_id = ANY(:session_ids)
             """),
-            {"session_ids": [s["id"] for s in sessions]},
+            {"session_ids": session_ids},
         ).mappings().all()
+        members = db.execute(
+            text("""
+                SELECT tm.team_id, tm.tak_uid, tm.callsign
+                FROM skitak_team_members tm
+                JOIN skitak_teams t ON t.id = tm.team_id
+                WHERE t.session_id = ANY(:session_ids)
+            """),
+            {"session_ids": session_ids},
+        ).mappings().all()
+        members_by_team: dict[Any, list[dict[str, Any]]] = {}
+        for m in members:
+            members_by_team.setdefault(m["team_id"], []).append(
+                {"tak_uid": m["tak_uid"], "callsign": m["callsign"]}
+            )
         by_session: dict[Any, list[dict[str, Any]]] = {}
         for t in teams:
-            by_session.setdefault(t["session_id"], []).append(dict(t))
+            team = dict(t)
+            team["members"] = members_by_team.get(t["id"], [])
+            by_session.setdefault(t["session_id"], []).append(team)
         for s in sessions:
             s["teams"] = by_session.get(s["id"], [])
 

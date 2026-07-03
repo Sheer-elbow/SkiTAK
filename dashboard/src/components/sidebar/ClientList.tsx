@@ -26,7 +26,7 @@ export function ClientList() {
   return (
     <div className="divide-y divide-surface-border overflow-y-auto">
       {sorted.map((client) => {
-        const team = activeSession?.teams.find((t) => t.memberUids.includes(client.uid))
+        const team = activeSession?.teams.find((t) => t.members.some((m) => m.tak_uid === client.uid))
         const teamColor = TEAM_COLORS[client.teamColor]
         const isSelected = client.uid === selectedUid
 

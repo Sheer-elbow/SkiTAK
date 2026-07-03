@@ -1,21 +1,28 @@
 import { create } from 'zustand'
-import type { Client, Session, Team, ChatMessage, POI } from '@/types'
+import type { ChatMessage, Client, EmergencyAlert, POI, Session } from '@/types'
+
+type AuthStatus = 'checking' | 'authenticated' | 'anonymous'
 
 interface AppState {
-  // Auth
-  isAuthenticated: boolean
-  currentUserUid: string | null
-  setAuth: (uid: string) => void
+  // Auth — 'checking' until the session cookie has been validated on load
+  authStatus: AuthStatus
+  currentUser: string | null
+  setAuth: (username: string) => void
   clearAuth: () => void
 
   // Active session
   activeSession: Session | null
   setActiveSession: (session: Session | null) => void
 
-  // Live clients — keyed by TAK UID
+  // Live clients — keyed by device (EUD) UID
   clients: Record<string, Client>
   upsertClient: (client: Client) => void
   markStaleClients: () => void
+
+  // Emergency alerts (b-a-o-* CoT)
+  alerts: EmergencyAlert[]
+  upsertAlert: (alert: EmergencyAlert) => void
+  dismissAlert: (uid: string) => void
 
   // Chat
   messages: ChatMessage[]
@@ -36,10 +43,10 @@ interface AppState {
 const STALE_THRESHOLD_MS = 5 * 60 * 1000  // 5 minutes
 
 export const useStore = create<AppState>((set) => ({
-  isAuthenticated: false,
-  currentUserUid: null,
-  setAuth: (uid) => set({ isAuthenticated: true, currentUserUid: uid }),
-  clearAuth: () => set({ isAuthenticated: false, currentUserUid: null }),
+  authStatus: 'checking',
+  currentUser: null,
+  setAuth: (username) => set({ authStatus: 'authenticated', currentUser: username }),
+  clearAuth: () => set({ authStatus: 'anonymous', currentUser: null }),
 
   activeSession: null,
   setActiveSession: (session) => set({ activeSession: session }),
@@ -60,6 +67,14 @@ export const useStore = create<AppState>((set) => ({
       )
       return { clients: updated }
     }),
+
+  alerts: [],
+  upsertAlert: (alert) =>
+    set((state) => ({
+      alerts: [...state.alerts.filter((a) => a.uid !== alert.uid), alert],
+    })),
+  dismissAlert: (uid) =>
+    set((state) => ({ alerts: state.alerts.filter((a) => a.uid !== uid) })),
 
   messages: [],
   addMessage: (msg) =>

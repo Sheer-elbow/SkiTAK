@@ -34,12 +34,27 @@ export interface Client {
   isOnline: boolean        // false if stale > 5 min
 }
 
+export interface TeamMember {
+  tak_uid: string
+  callsign: string
+}
+
 export interface Team {
   id: string
   sessionId: string
   name: string
   color: TeamColor
-  memberUids: string[]
+  members: TeamMember[]
+}
+
+export interface EmergencyAlert {
+  uid: string
+  senderUid: string
+  callsign: string | null
+  alertType: string
+  location: Position | null
+  startedAt: string
+  cancelled: boolean
 }
 
 export interface Session {

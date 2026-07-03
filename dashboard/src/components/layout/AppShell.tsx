@@ -1,16 +1,25 @@
-import { Outlet, Link, useLocation } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { logout } from '@/api'
+import { useOtsSocket } from '@/hooks/useOtsSocket'
 import { useStore } from '@/store'
-import { useCoTSocket } from '@/hooks/useCoTSocket'
 import clsx from 'clsx'
 
 export function AppShell() {
-  useCoTSocket()
+  useOtsSocket()
 
   const clients = useStore((s) => s.clients)
   const activeSession = useStore((s) => s.activeSession)
+  const clearAuth = useStore((s) => s.clearAuth)
   const location = useLocation()
+  const navigate = useNavigate()
 
   const onlineCount = Object.values(clients).filter((c) => c.isOnline).length
+
+  async function handleLogout() {
+    await logout().catch(() => {})
+    clearAuth()
+    navigate('/login')
+  }
 
   return (
     <div className="flex flex-col h-full bg-surface">
@@ -33,13 +42,59 @@ export function AppShell() {
               {activeSession.name}
             </span>
           )}
+          <button
+            onClick={handleLogout}
+            className="text-xs text-gray-500 hover:text-gray-200 px-2 py-1"
+          >
+            Sign out
+          </button>
         </div>
       </nav>
+
+      <EmergencyBanner />
 
       {/* ── Page content (rendered by router) ─────────────────────── */}
       <div className="flex-1 min-h-0">
         <Outlet />
       </div>
+    </div>
+  )
+}
+
+function EmergencyBanner() {
+  const alerts = useStore((s) => s.alerts)
+  const dismissAlert = useStore((s) => s.dismissAlert)
+  const selectClient = useStore((s) => s.selectClient)
+
+  if (alerts.length === 0) return null
+
+  return (
+    <div className="bg-accent-red/95 text-white flex-shrink-0">
+      {alerts.map((alert) => (
+        <div key={alert.uid} className="flex items-center gap-3 px-4 py-2 text-sm">
+          <span className="text-lg animate-pulse">🆘</span>
+          <span className="font-semibold">
+            EMERGENCY — {alert.callsign ?? alert.senderUid}
+          </span>
+          {alert.location && (
+            <button
+              onClick={() => selectClient(alert.senderUid)}
+              className="underline underline-offset-2 text-white/90 hover:text-white"
+            >
+              {alert.location.lat.toFixed(5)}, {alert.location.lon.toFixed(5)}
+            </button>
+          )}
+          <span className="text-white/70 text-xs">
+            {new Date(alert.startedAt).toLocaleTimeString()}
+          </span>
+          <button
+            onClick={() => dismissAlert(alert.uid)}
+            className="ml-auto text-white/70 hover:text-white text-xs font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      ))}
     </div>
   )
 }

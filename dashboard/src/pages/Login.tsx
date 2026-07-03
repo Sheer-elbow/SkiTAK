@@ -16,8 +16,8 @@ export function Login() {
     setError('')
     setLoading(true)
     try {
-      const { uid } = await login(username, password)
-      setAuth(uid)
+      const user = await login(username, password)
+      setAuth(user)
       navigate('/')
     } catch {
       setError('Invalid username or password')
