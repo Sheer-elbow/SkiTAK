@@ -144,11 +144,22 @@ make up
 OTS runs its database migrations automatically on startup, and the SkiTAK
 plugin applies its own schema changes idempotently.
 
-## Known limitations (Phase 0)
+## Device access and revocation
+
+Every enrolled device authenticates with a client certificate whose CN maps
+to an OTS user account. Access is revoked by deactivating that account, which
+happens automatically when:
+
+- a session ends (`POST .../end` — pass `{"revoke_devices": false}` to opt out)
+- a client is deleted from the roster
+
+A revoked device's next connection attempt is refused even though its
+certificate is still within its validity period. Re-enrolling the same
+client reactivates their account.
+
+## Known limitations
 
 - Mumble/OTS auth integration blocked on upstream (hardcoded localhost Ice address)
 - RabbitMQ runs with guest/guest on the internal network only — OTS builds its
   Socket.IO broker URL without credentials
-- Client certificates are valid for the OTS CA default lifetime; revocation
-  tooling is Phase 1 work
-- The React dashboard still targets a placeholder API in places — Phase 1
+- GeoChat in the dashboard is read-only scaffolding (Phase 2)

@@ -1,5 +1,6 @@
 import CoreLocation
 import Foundation
+import UIKit
 
 /// Builds Cursor-on-Target XML events from device state.
 /// The XML is sent as a streaming CoT event over TCP/TLS to the server.
@@ -14,13 +15,24 @@ enum CoTBuilder {
         return uid
     }()
 
+    /// UIDevice.batteryLevel returns -1 until monitoring is enabled once.
+    private static let batteryMonitoringEnabled: Bool = {
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        return true
+    }()
+
+    static func currentBatteryLevel() -> Float {
+        _ = batteryMonitoringEnabled
+        return UIDevice.current.batteryLevel
+    }
+
     /// SA position update — sent on every location fix
     static func saEvent(
         location: CLLocation,
         callsign: String,
         teamName: String = "Cyan",
         role: String = "Team Member",
-        batteryLevel: Float = UIDevice.current.batteryLevel,
+        batteryLevel: Float? = nil,
         heartRateBpm: Int? = nil
     ) -> String {
         let now = Date()
@@ -33,7 +45,8 @@ enum CoTBuilder {
             heartRateXML = "<skitak heart_rate_bpm=\"\(bpm)\"/>"
         }
 
-        let battery = batteryLevel >= 0 ? Int(batteryLevel * 100) : -1
+        let level = batteryLevel ?? currentBatteryLevel()
+        let battery = level >= 0 ? Int(level * 100) : -1
         let batteryAttr = battery >= 0 ? "battery=\"\(battery)\"" : ""
 
         return """
