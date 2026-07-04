@@ -27,8 +27,9 @@ export function AppShell() {
       <nav className="flex items-center gap-1 px-4 h-11 border-b border-surface-border flex-shrink-0">
         <span className="font-bold text-sm mr-3 tracking-tight">SkiTAK</span>
 
-        <NavLink to="/"        label="Live Map" active={location.pathname === '/'} />
-        <NavLink to="/clients" label="Clients"  active={location.pathname === '/clients'} />
+        <NavLink to="/"         label="Live Map" active={location.pathname === '/'} />
+        <NavLink to="/clients"  label="Clients"  active={location.pathname === '/clients'} />
+        <NavLink to="/sessions" label="Sessions" active={location.pathname.startsWith('/sessions')} />
 
         <div className="ml-auto flex items-center gap-2">
           {onlineCount > 0 && (

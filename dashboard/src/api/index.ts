@@ -131,6 +131,53 @@ export function getSessionSummary(sessionId: string) {
   }>(`/api/skitak/sessions/${sessionId}/summary`)
 }
 
+// ── Session history / replay ──────────────────────────────────────────────
+
+export interface SessionParticipant {
+  tak_uid: string
+  callsign: string
+  team_id: string | null
+  point_count: number
+  first_at: string
+  last_at: string
+  distance_km: string | number
+  max_speed_kph: string | number | null
+  max_altitude_m: string | number | null
+  min_altitude_m: string | number | null
+}
+
+export interface SessionDetail {
+  id: string
+  name: string
+  activity_type: string
+  guide_uid: string
+  created_at: string | null
+  started_at: string | null
+  ended_at: string | null
+  teams: Array<{ id: string; name: string; color: string }>
+  participants: SessionParticipant[]
+}
+
+export interface ReplayTrackPoint {
+  recorded_at: string
+  lat: number
+  lon: number
+  altitude_m: number | null
+  speed_ms: number | null
+  course_deg: number | null
+  battery_pct: number | null
+}
+
+export function getSessionDetail(sessionId: string) {
+  return request<SessionDetail>(`/api/skitak/sessions/${sessionId}`)
+}
+
+export function getSessionTracks(sessionId: string, every = 1) {
+  return request<{ tracks: Record<string, ReplayTrackPoint[]> }>(
+    `/api/skitak/sessions/${sessionId}/tracks?every=${every}`,
+  ).then((r) => r.tracks)
+}
+
 // ── Teams ─────────────────────────────────────────────────────────────────
 
 export function createTeam(sessionId: string, name: string, color: string) {

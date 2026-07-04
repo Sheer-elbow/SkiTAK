@@ -135,6 +135,76 @@ def get_team(db: Session, session_id: uuid.UUID, team_id: uuid.UUID) -> dict[str
     return dict(row) if row else None
 
 
+def get_session_detail(db: Session, session_id: uuid.UUID) -> dict[str, Any] | None:
+    """
+    Full session view for history/replay: teams, and per-participant
+    statistics computed from the recorded track points.
+    """
+    session_row = db.execute(
+        text("""
+            SELECT id, name, activity_type, guide_uid, created_at, started_at, ended_at
+            FROM skitak_sessions WHERE id = :session_id
+        """),
+        {"session_id": session_id},
+    ).mappings().first()
+    if not session_row:
+        return None
+
+    teams = db.execute(
+        text("""
+            SELECT t.id, t.name, t.color
+            FROM skitak_teams t WHERE t.session_id = :session_id
+        """),
+        {"session_id": session_id},
+    ).mappings().all()
+
+    # Per-participant stats. LAG deltas live in a CTE (window functions are
+    # not allowed inside aggregates), partitioned per device.
+    participants = db.execute(
+        text("""
+            WITH deltas AS (
+                SELECT
+                    tp.tak_uid,
+                    tp.recorded_at,
+                    tp.altitude_m,
+                    tp.speed_ms,
+                    ST_Distance(
+                        tp.location,
+                        LAG(tp.location) OVER (
+                            PARTITION BY tp.tak_uid ORDER BY tp.recorded_at
+                        )
+                    ) AS dist_m
+                FROM skitak_track_points tp
+                WHERE tp.session_id = :session_id
+            )
+            SELECT
+                d.tak_uid,
+                COALESCE(MAX(tm.callsign), d.tak_uid)           AS callsign,
+                MAX(tm.team_id::text)                           AS team_id,
+                COUNT(*)                                        AS point_count,
+                MIN(d.recorded_at)                              AS first_at,
+                MAX(d.recorded_at)                              AS last_at,
+                ROUND((COALESCE(SUM(d.dist_m), 0) / 1000.0)::numeric, 2) AS distance_km,
+                ROUND((MAX(d.speed_ms) * 3.6)::numeric, 1)      AS max_speed_kph,
+                ROUND(MAX(d.altitude_m)::numeric, 0)            AS max_altitude_m,
+                ROUND(MIN(d.altitude_m)::numeric, 0)            AS min_altitude_m
+            FROM deltas d
+            LEFT JOIN skitak_team_members tm
+                   ON tm.tak_uid = d.tak_uid
+                  AND tm.team_id IN (SELECT id FROM skitak_teams WHERE session_id = :session_id)
+            GROUP BY d.tak_uid
+            ORDER BY callsign
+        """),
+        {"session_id": session_id},
+    ).mappings().all()
+
+    return {
+        **dict(session_row),
+        "teams": [dict(t) for t in teams],
+        "participants": [dict(p) for p in participants],
+    }
+
+
 def get_session_summary(db: Session, session_id: uuid.UUID) -> dict[str, Any]:
     """
     Return summary stats for a session.

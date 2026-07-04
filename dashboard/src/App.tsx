@@ -6,6 +6,8 @@ import { AppShell } from '@/components/layout/AppShell'
 import { ClientsPage } from '@/pages/ClientsPage'
 import { LiveMapPage } from '@/pages/LiveMapPage'
 import { Login } from '@/pages/Login'
+import { SessionReplayPage } from '@/pages/SessionReplayPage'
+import { SessionsPage } from '@/pages/SessionsPage'
 import { useStore } from '@/store'
 
 const queryClient = new QueryClient({
@@ -51,6 +53,8 @@ export function App() {
           >
             <Route index element={<LiveMapPage />} />
             <Route path="clients" element={<ClientsPage />} />
+            <Route path="sessions" element={<SessionsPage />} />
+            <Route path="sessions/:sessionId" element={<SessionReplayPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
