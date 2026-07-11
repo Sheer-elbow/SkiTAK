@@ -85,6 +85,52 @@ def get_session_track(
     return [dict(r) for r in rows]
 
 
+def get_session_tracks(
+    db: Session,
+    session_id: uuid.UUID,
+    every: int = 1,
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    All participants' tracks for a session, keyed by device UID and ordered
+    by time — the payload behind track replay. `every` keeps only every Nth
+    point per device (decimation for very long sessions).
+    """
+    every = max(1, every)
+    rows = db.execute(
+        text("""
+            WITH numbered AS (
+                SELECT
+                    tak_uid,
+                    recorded_at,
+                    ST_Y(location::geometry) AS lat,
+                    ST_X(location::geometry) AS lon,
+                    altitude_m,
+                    speed_ms,
+                    course_deg,
+                    battery_pct,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY tak_uid ORDER BY recorded_at
+                    ) AS rn
+                FROM skitak_track_points
+                WHERE session_id = :session_id
+            )
+            SELECT tak_uid, recorded_at, lat, lon, altitude_m,
+                   speed_ms, course_deg, battery_pct
+            FROM numbered
+            WHERE (rn - 1) % :every = 0
+            ORDER BY tak_uid, recorded_at
+        """),
+        {"session_id": session_id, "every": every},
+    ).mappings().all()
+
+    tracks: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        point = dict(row)
+        uid = point.pop("tak_uid")
+        tracks.setdefault(uid, []).append(point)
+    return tracks
+
+
 def export_gpx(
     db: Session,
     session_id: uuid.UUID,

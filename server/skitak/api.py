@@ -19,12 +19,13 @@ from .sessions import (
     create_session,
     create_team,
     end_session,
+    get_session_detail,
     get_session_summary,
     get_team,
     list_sessions,
     start_session,
 )
-from .tracks import export_gpx, get_session_track
+from .tracks import export_gpx, get_session_track, get_session_tracks
 
 bp = Blueprint("skitak", __name__, url_prefix="/api/skitak")
 
@@ -80,6 +81,39 @@ def end_session_endpoint(session_id: str):
     if body.get("revoke_devices", True):
         revoked = revoke_session_devices(sid)
     return jsonify({"status": "ended", "revoked_devices": revoked}), 200
+
+
+@bp.get("/sessions/<session_id>")
+@auth_required()
+def session_detail(session_id: str):
+    """Session history/replay view: teams + per-participant track stats."""
+    sid = parse_uuid(session_id)
+    if not sid:
+        return jsonify({"error": "Session not found"}), 404
+    detail = get_session_detail(db.session, sid)
+    if detail is None:
+        return jsonify({"error": "Session not found"}), 404
+    detail["teams"] = [serialise(t) for t in detail["teams"]]
+    detail["participants"] = [serialise(p) for p in detail["participants"]]
+    return jsonify(serialise(detail))
+
+
+@bp.get("/sessions/<session_id>/tracks")
+@auth_required()
+def all_session_tracks(session_id: str):
+    """All participants' tracks, keyed by device UID — feeds track replay.
+    ?every=N keeps every Nth point per device (decimation)."""
+    sid = parse_uuid(session_id)
+    if not sid:
+        return jsonify({"error": "Session not found"}), 404
+    try:
+        every = max(1, min(int(request.args.get("every", 1)), 100))
+    except ValueError:
+        every = 1
+    tracks = get_session_tracks(db.session, sid, every=every)
+    return jsonify({
+        "tracks": {uid: [serialise(p) for p in pts] for uid, pts in tracks.items()}
+    })
 
 
 @bp.get("/sessions/<session_id>/summary")
