@@ -10,6 +10,15 @@ export function setCsrfToken(token: string | null) {
   csrfToken = token
 }
 
+/** Flask-Security also mirrors the CSRF token into the XSRF-TOKEN cookie —
+ * the survivor across page reloads (module state is lost). */
+function currentCsrfToken(): string | null {
+  const cookie = document.cookie
+    .split('; ')
+    .find((c) => c.startsWith('XSRF-TOKEN='))
+  return cookie ? decodeURIComponent(cookie.slice('XSRF-TOKEN='.length)) : csrfToken
+}
+
 export class HttpError extends Error {
   constructor(public status: number, statusText: string) {
     super(`${status} ${statusText}`)
@@ -18,12 +27,14 @@ export class HttpError extends Error {
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    // FormData bodies set their own multipart boundary — don't override it
+    ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(init?.headers as Record<string, string> | undefined),
   }
   const method = (init?.method ?? 'GET').toUpperCase()
-  if (method !== 'GET' && method !== 'HEAD' && csrfToken) {
-    headers['X-XSRF-TOKEN'] = csrfToken
+  if (method !== 'GET' && method !== 'HEAD') {
+    const token = currentCsrfToken()
+    if (token) headers['X-XSRF-TOKEN'] = token
   }
   const res = await fetch(path, {
     credentials: 'same-origin',

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { PlannedRoute } from '@/api'
 import type { ChatMessage, Client, EmergencyAlert, POI, Session } from '@/types'
 
 type AuthStatus = 'checking' | 'authenticated' | 'anonymous'
@@ -13,6 +14,10 @@ interface AppState {
   // Active session
   activeSession: Session | null
   setActiveSession: (session: Session | null) => void
+
+  // Planned route for the active session
+  plannedRoute: PlannedRoute | null
+  setPlannedRoute: (route: PlannedRoute | null) => void
 
   // Live clients — keyed by device (EUD) UID
   clients: Record<string, Client>
@@ -49,7 +54,15 @@ export const useStore = create<AppState>((set) => ({
   clearAuth: () => set({ authStatus: 'anonymous', currentUser: null }),
 
   activeSession: null,
-  setActiveSession: (session) => set({ activeSession: session }),
+  setActiveSession: (session) =>
+    set((state) => ({
+      activeSession: session,
+      // Route belongs to a session — drop it when the session changes
+      plannedRoute: session && session.id === state.activeSession?.id ? state.plannedRoute : null,
+    })),
+
+  plannedRoute: null,
+  setPlannedRoute: (route) => set({ plannedRoute: route }),
 
   clients: {},
   upsertClient: (client) =>

@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   createSession,
   createTeam,
+  deleteSessionRoute,
   endSession,
   getInviteLink,
   getRunningSession,
+  getSessionRoute,
   startSession,
+  uploadRoute,
 } from '@/api'
 import { useStore } from '@/store'
 import { ACTIVITY_LABELS, TEAM_COLORS, type Session, type Team, type TeamColor } from '@/types'
@@ -216,6 +219,8 @@ function ActiveSessionView({ session, onEnd }: { session: Session; onEnd: () => 
         ))}
       </div>
 
+      <RouteSection sessionId={session.id} />
+
       {/* Add team */}
       <form onSubmit={handleAddTeam} className="space-y-2">
         <input
@@ -268,6 +273,79 @@ function ActiveSessionView({ session, onEnd }: { session: Session; onEnd: () => 
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+function RouteSection({ sessionId }: { sessionId: string }) {
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const plannedRoute = useStore((s) => s.plannedRoute)
+  const setPlannedRoute = useStore((s) => s.setPlannedRoute)
+
+  // Load the session's route (page refresh, second device)
+  const { data } = useQuery({
+    queryKey: ['session-route', sessionId],
+    queryFn: () => getSessionRoute(sessionId),
+  })
+  useEffect(() => {
+    if (data !== undefined) setPlannedRoute(data)
+  }, [data])
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setBusy(true)
+    setError(null)
+    try {
+      await uploadRoute(sessionId, file)
+      setPlannedRoute(await getSessionRoute(sessionId))
+    } catch {
+      setError('Could not read that GPX file')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRemove() {
+    await deleteSessionRoute(sessionId)
+    setPlannedRoute(null)
+  }
+
+  return (
+    <div className="space-y-2">
+      <h4 className="text-xs text-gray-400 uppercase tracking-wider">Planned route</h4>
+      {plannedRoute ? (
+        <div className="flex items-center justify-between bg-surface-raised rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-accent-green">▰▰</span>
+            <span className="text-sm truncate">{plannedRoute.name}</span>
+            <span className="text-xs text-gray-500">({plannedRoute.point_count} pts)</span>
+          </div>
+          <button onClick={handleRemove} className="text-xs text-accent-red hover:text-red-300">
+            Remove
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => fileInput.current?.click()}
+          disabled={busy}
+          className="w-full text-xs bg-surface-raised hover:bg-surface-border disabled:opacity-40 border border-dashed border-surface-border rounded-lg px-3 py-2 text-gray-300"
+        >
+          {busy ? 'Uploading…' : 'Upload GPX route — clients see it on their map'}
+        </button>
+      )}
+      {error && <p className="text-xs text-accent-red">{error}</p>}
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".gpx,application/gpx+xml"
+        className="hidden"
+        onChange={handleFile}
+        aria-label="GPX route file"
+      />
     </div>
   )
 }

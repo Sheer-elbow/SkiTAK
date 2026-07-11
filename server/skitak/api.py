@@ -8,13 +8,23 @@ and are token-gated instead.
 """
 from __future__ import annotations
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 from flask_security import auth_required, current_user
 from opentakserver.extensions import db
+from sqlalchemy import text
 
 from .common import parse_uuid, safe_filename, serialise
 from .enrollment import TOKEN_TTL_HOURS, create_invite_token
-from .groups import ensure_team_group, revoke_session_devices
+from .groups import ensure_team_group, group_name_for_team, revoke_session_devices
+from .routes import (
+    GpxError,
+    broadcast_route_to_teams,
+    delete_route,
+    get_route,
+    parse_gpx,
+    route_cot_xml,
+    store_route,
+)
 from .sessions import (
     create_session,
     create_team,
@@ -173,6 +183,84 @@ def get_invite_link(session_id: str, team_id: str):
         "invite_url": f"{base_url}/join/{token}",
         "expires_in_hours": TOKEN_TTL_HOURS,
     })
+
+
+# ── Planned route ─────────────────────────────────────────────────────────
+
+@bp.post("/sessions/<session_id>/route")
+@auth_required()
+def upload_route(session_id: str):
+    """
+    Upload a planned route as GPX (multipart field `gpx` or the raw request
+    body). Stored for the dashboard and broadcast to the session's team
+    devices as a TAK route CoT.
+    """
+    sid = parse_uuid(session_id)
+    if not sid:
+        return jsonify({"error": "Session not found"}), 404
+
+    if "gpx" in request.files:
+        data = request.files["gpx"].read()
+    else:
+        data = request.get_data()
+    if not data:
+        return jsonify({"error": "No GPX data supplied"}), 400
+
+    try:
+        name, points = parse_gpx(data)
+    except GpxError as e:
+        return jsonify({"error": str(e)}), 400
+
+    route_id = store_route(
+        db.session, sid, name, points,
+        uploaded_by=getattr(current_user, "username", None),
+    )
+
+    # Broadcast to connected team devices (best-effort — the stored route
+    # still reaches devices enrolling later via the dashboard/map).
+    teams = db.session.execute(
+        text("SELECT id FROM skitak_teams WHERE session_id = :sid"), {"sid": sid}
+    ).scalars().all()
+    broadcast_count = 0
+    try:
+        broadcast_count = broadcast_route_to_teams(
+            rabbit_host=current_app.config.get("OTS_RABBITMQ_SERVER_ADDRESS", "127.0.0.1"),
+            rabbit_user=current_app.config.get("OTS_RABBITMQ_USERNAME", "guest"),
+            rabbit_password=current_app.config.get("OTS_RABBITMQ_PASSWORD", "guest"),
+            group_names=[group_name_for_team(t) for t in teams],
+            cot_xml=route_cot_xml(name, points, route_uid=f"skitak-route-{route_id}"),
+        )
+    except Exception as e:
+        current_app.logger.error(f"SkiTAK: route broadcast failed: {e}")
+
+    return jsonify({
+        "route_id": route_id,
+        "name": name,
+        "point_count": len(points),
+        "broadcast_teams": broadcast_count,
+    }), 201
+
+
+@bp.get("/sessions/<session_id>/route")
+@auth_required()
+def get_route_endpoint(session_id: str):
+    sid = parse_uuid(session_id)
+    if not sid:
+        return jsonify({"error": "Session not found"}), 404
+    route = get_route(db.session, sid)
+    if route is None:
+        return jsonify({"route": None})
+    return jsonify({"route": serialise(route)})
+
+
+@bp.delete("/sessions/<session_id>/route")
+@auth_required()
+def delete_route_endpoint(session_id: str):
+    sid = parse_uuid(session_id)
+    if not sid:
+        return jsonify({"error": "Session not found"}), 404
+    deleted = delete_route(db.session, sid)
+    return jsonify({"status": "deleted" if deleted else "no route"})
 
 
 # ── Tracks ────────────────────────────────────────────────────────────────

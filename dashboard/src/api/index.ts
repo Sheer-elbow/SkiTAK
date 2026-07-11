@@ -178,6 +178,36 @@ export function getSessionTracks(sessionId: string, every = 1) {
   ).then((r) => r.tracks)
 }
 
+// ── Planned route ─────────────────────────────────────────────────────────
+
+export interface PlannedRoute {
+  id: string
+  name: string
+  point_count: number
+  uploaded_by: string | null
+  uploaded_at: string
+  points: Array<{ lat: number; lon: number }>
+}
+
+export function uploadRoute(sessionId: string, file: File) {
+  const form = new FormData()
+  form.append('gpx', file)
+  return request<{ route_id: string; name: string; point_count: number; broadcast_teams: number }>(
+    `/api/skitak/sessions/${sessionId}/route`,
+    { method: 'POST', body: form },
+  )
+}
+
+export function getSessionRoute(sessionId: string) {
+  return request<{ route: PlannedRoute | null }>(
+    `/api/skitak/sessions/${sessionId}/route`,
+  ).then((r) => r.route)
+}
+
+export function deleteSessionRoute(sessionId: string) {
+  return request(`/api/skitak/sessions/${sessionId}/route`, { method: 'DELETE' })
+}
+
 // ── Teams ─────────────────────────────────────────────────────────────────
 
 export function createTeam(sessionId: string, name: string, color: string) {
