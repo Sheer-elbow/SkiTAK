@@ -107,6 +107,19 @@ CREATE TABLE IF NOT EXISTS skitak_session_clients (
     PRIMARY KEY (session_id, client_id)
 );
 
+-- Planned routes — guide uploads a GPX, clients see it on their map
+CREATE TABLE IF NOT EXISTS skitak_routes (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id      UUID REFERENCES skitak_sessions(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    geometry        GEOGRAPHY(LINESTRING, 4326) NOT NULL,
+    point_count     INTEGER NOT NULL,
+    uploaded_by     TEXT,
+    uploaded_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_routes_session ON skitak_routes (session_id);
+
 -- POI / waypoints overlay
 CREATE TABLE IF NOT EXISTS skitak_pois (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

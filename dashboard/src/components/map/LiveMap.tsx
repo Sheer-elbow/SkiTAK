@@ -52,6 +52,9 @@ export function LiveMap() {
   const pois = useStore((s) => s.pois)
   const selectedUid = useStore((s) => s.selectedUid)
   const selectClient = useStore((s) => s.selectClient)
+  const plannedRoute = useStore((s) => s.plannedRoute)
+  const routeRef = useRef(plannedRoute)
+  routeRef.current = plannedRoute
 
   // ── Initialise map ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -73,11 +76,21 @@ export function LiveMap() {
     )
     map.current.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right')
 
+    // Custom sources are wiped by setStyle (base-layer switch) — re-sync the
+    // planned route whenever a style finishes loading.
+    map.current.on('load', () => syncRoute(map.current!, routeRef.current))
+    map.current.on('styledata', () => syncRoute(map.current!, routeRef.current))
+
     return () => {
       map.current?.remove()
       map.current = null
     }
   }, [])
+
+  // ── Planned route overlay ────────────────────────────────────────────────
+  useEffect(() => {
+    if (map.current?.isStyleLoaded()) syncRoute(map.current, plannedRoute)
+  }, [plannedRoute])
 
   // ── Switch base layer ────────────────────────────────────────────────────
   useEffect(() => {
@@ -241,4 +254,50 @@ function updateMarkerElement(marker: maplibregl.Marker, color: string, selected:
   if (!circle) return
   circle.style.background = offline ? '#6b7280' : color
   circle.style.border = selected ? '3px solid white' : '2px solid rgba(0,0,0,0.4)'
+}
+
+// Add / update / remove the planned-route line on the current style.
+// Safe to call repeatedly (idempotent per style).
+function syncRoute(
+  m: maplibregl.Map,
+  route: { points: Array<{ lat: number; lon: number }> } | null,
+) {
+  const SOURCE = 'skitak-planned-route'
+  try {
+    const existing = m.getSource(SOURCE) as maplibregl.GeoJSONSource | undefined
+    if (!route || route.points.length < 2) {
+      if (m.getLayer(SOURCE)) m.removeLayer(SOURCE)
+      if (existing) m.removeSource(SOURCE)
+      return
+    }
+    const data: GeoJSON.Feature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'LineString',
+        coordinates: route.points.map((p) => [p.lon, p.lat]),
+      },
+    }
+    if (existing) {
+      existing.setData(data)
+    } else {
+      m.addSource(SOURCE, { type: 'geojson', data })
+    }
+    if (!m.getLayer(SOURCE)) {
+      m.addLayer({
+        id: SOURCE,
+        type: 'line',
+        source: SOURCE,
+        paint: {
+          'line-color': '#22c55e',
+          'line-width': 4,
+          'line-opacity': 0.8,
+          'line-dasharray': [2, 1.5],
+        },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      })
+    }
+  } catch {
+    // styledata can fire mid-style-swap; the next event re-syncs
+  }
 }
