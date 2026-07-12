@@ -51,10 +51,11 @@ export interface EmergencyAlert {
   uid: string
   senderUid: string
   callsign: string | null
-  alertType: string
+  alertType: string           // '911' | 'geofence-exit' | 'geofence-enter' | ...
   location: Position | null
   startedAt: string
   cancelled: boolean
+  geofenceName?: string
 }
 
 export interface Session {

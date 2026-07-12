@@ -15,6 +15,13 @@ from sqlalchemy import text
 
 from .common import parse_uuid, safe_filename, serialise
 from .enrollment import TOKEN_TTL_HOURS, create_invite_token
+from .geofence import (
+    GeofenceError,
+    create_geofence,
+    delete_geofence,
+    list_geofences,
+    recent_events,
+)
 from .groups import ensure_team_group, group_name_for_team, revoke_session_devices
 from .routes import (
     GpxError,
@@ -183,6 +190,63 @@ def get_invite_link(session_id: str, team_id: str):
         "invite_url": f"{base_url}/join/{token}",
         "expires_in_hours": TOKEN_TTL_HOURS,
     })
+
+
+# ── Geofences ─────────────────────────────────────────────────────────────
+
+@bp.post("/sessions/<session_id>/geofences")
+@auth_required()
+def create_geofence_endpoint(session_id: str):
+    """
+    Create a fence. Body: {name, fence_type: keep_in|keep_out,
+    polygon: [{lat, lon}, ...]} or {..., circle: {lat, lon, radius_m}}.
+    """
+    sid = parse_uuid(session_id)
+    if not sid:
+        return jsonify({"error": "Session not found"}), 404
+    body = request.get_json(force=True)
+    try:
+        fence_id = create_geofence(
+            db.session,
+            sid,
+            name=body.get("name", ""),
+            fence_type=body.get("fence_type", "keep_in"),
+            polygon=body.get("polygon"),
+            circle=body.get("circle"),
+            created_by=getattr(current_user, "username", None),
+        )
+    except GeofenceError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"geofence_id": fence_id}), 201
+
+
+@bp.get("/sessions/<session_id>/geofences")
+@auth_required()
+def list_geofences_endpoint(session_id: str):
+    sid = parse_uuid(session_id)
+    if not sid:
+        return jsonify({"error": "Session not found"}), 404
+    return jsonify({"geofences": [serialise(f) for f in list_geofences(db.session, sid)]})
+
+
+@bp.delete("/sessions/<session_id>/geofences/<fence_id>")
+@auth_required()
+def delete_geofence_endpoint(session_id: str, fence_id: str):
+    sid, fid = parse_uuid(session_id), parse_uuid(fence_id)
+    if not sid or not fid:
+        return jsonify({"error": "Geofence not found"}), 404
+    if not delete_geofence(db.session, sid, fid):
+        return jsonify({"error": "Geofence not found"}), 404
+    return jsonify({"status": "deleted"})
+
+
+@bp.get("/sessions/<session_id>/geofence-events")
+@auth_required()
+def geofence_events_endpoint(session_id: str):
+    sid = parse_uuid(session_id)
+    if not sid:
+        return jsonify({"error": "Session not found"}), 404
+    return jsonify({"events": [serialise(e) for e in recent_events(db.session, sid)]})
 
 
 # ── Planned route ─────────────────────────────────────────────────────────

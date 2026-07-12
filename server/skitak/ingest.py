@@ -107,7 +107,11 @@ def resolve_active_membership(
     return (row[0], row[1]) if row else None
 
 
-def ingest_position(db_session: Session, position: dict[str, Any]) -> bool:
+def ingest_position(
+    db_session: Session,
+    position: dict[str, Any],
+    geofence_monitor=None,
+) -> bool:
     """Store one parsed position against its session. Returns True if stored."""
     callsign = position.get("callsign")
     if not callsign:
@@ -129,6 +133,16 @@ def ingest_position(db_session: Session, position: dict[str, Any]) -> bool:
         )
 
     store_track_point(db_session, {**position, "session_id": session_id})
+
+    if geofence_monitor is not None:
+        geofence_monitor.check(
+            db_session,
+            session_id,
+            tak_uid=position["uid"],
+            callsign=callsign,
+            lat=position["point"]["lat"],
+            lon=position["point"]["lon"],
+        )
     return True
 
 
@@ -148,6 +162,19 @@ class TrackIngestWorker:
         self._rabbit_host = app.config.get("OTS_RABBITMQ_SERVER_ADDRESS", "127.0.0.1")
         self._rabbit_user = app.config.get("OTS_RABBITMQ_USERNAME", "guest")
         self._rabbit_password = app.config.get("OTS_RABBITMQ_PASSWORD", "guest")
+
+        # Geofence transitions go straight to the dashboard. socketio is
+        # backed by the AMQP message queue, so emitting from this worker
+        # thread reaches every connected browser.
+        from opentakserver.extensions import socketio
+
+        from .geofence import GeofenceMonitor
+
+        self._geofence_monitor = GeofenceMonitor(
+            emit=lambda payload: socketio.emit(
+                "skitak_geofence", payload, namespace="/socket.io"
+            )
+        )
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -203,7 +230,7 @@ class TrackIngestWorker:
             if not self._cached_is_active(position.get("callsign")):
                 return
             with Session(self._engine) as db_session:
-                ingest_position(db_session, position)
+                ingest_position(db_session, position, geofence_monitor=self._geofence_monitor)
         except Exception as e:
             logger.error(f"SkiTAK: failed to ingest track point: {e}")
 

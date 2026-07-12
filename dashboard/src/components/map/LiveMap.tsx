@@ -55,6 +55,12 @@ export function LiveMap() {
   const plannedRoute = useStore((s) => s.plannedRoute)
   const routeRef = useRef(plannedRoute)
   routeRef.current = plannedRoute
+  const geofences = useStore((s) => s.geofences)
+  const fencesRef = useRef(geofences)
+  fencesRef.current = geofences
+  const drawingFence = useStore((s) => s.drawingFence)
+  const drawingRef = useRef(drawingFence)
+  drawingRef.current = drawingFence
 
   // ── Initialise map ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -76,10 +82,21 @@ export function LiveMap() {
     )
     map.current.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right')
 
-    // Custom sources are wiped by setStyle (base-layer switch) — re-sync the
-    // planned route whenever a style finishes loading.
-    map.current.on('load', () => syncRoute(map.current!, routeRef.current))
-    map.current.on('styledata', () => syncRoute(map.current!, routeRef.current))
+    // Custom sources are wiped by setStyle (base-layer switch) — re-sync
+    // overlays whenever a style finishes loading.
+    const syncAll = () => {
+      syncRoute(map.current!, routeRef.current)
+      syncFences(map.current!, fencesRef.current, drawingRef.current)
+    }
+    map.current.on('load', syncAll)
+    map.current.on('styledata', syncAll)
+
+    // Click-to-draw: while drawing, clicks add polygon vertices
+    map.current.on('click', (e) => {
+      if (useStore.getState().drawingFence !== null) {
+        useStore.getState().addDrawingPoint({ lat: e.lngLat.lat, lon: e.lngLat.lng })
+      }
+    })
 
     return () => {
       map.current?.remove()
@@ -91,6 +108,13 @@ export function LiveMap() {
   useEffect(() => {
     if (map.current?.isStyleLoaded()) syncRoute(map.current, plannedRoute)
   }, [plannedRoute])
+
+  // ── Geofence overlays + drawing preview ──────────────────────────────────
+  useEffect(() => {
+    if (map.current?.isStyleLoaded()) syncFences(map.current, geofences, drawingFence)
+    const canvas = map.current?.getCanvas()
+    if (canvas) canvas.style.cursor = drawingFence !== null ? 'crosshair' : ''
+  }, [geofences, drawingFence])
 
   // ── Switch base layer ────────────────────────────────────────────────────
   useEffect(() => {
@@ -299,5 +323,89 @@ function syncRoute(
     }
   } catch {
     // styledata can fire mid-style-swap; the next event re-syncs
+  }
+}
+
+// Render geofence polygons (green = keep_in boundary, red = keep_out hazard)
+// plus the in-progress drawing preview. Idempotent per style.
+function syncFences(
+  m: maplibregl.Map,
+  fences: Array<{
+    id: string
+    name: string
+    fence_type: 'keep_in' | 'keep_out'
+    points: Array<{ lat: number; lon: number }>
+  }>,
+  drawing: Array<{ lat: number; lon: number }> | null,
+) {
+  const FENCES = 'skitak-geofences'
+  const DRAWING = 'skitak-fence-drawing'
+  try {
+    const fenceData: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features: fences.map((f) => ({
+        type: 'Feature',
+        properties: { name: f.name, keepOut: f.fence_type === 'keep_out' },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [f.points.map((p) => [p.lon, p.lat])],
+        },
+      })),
+    }
+    const existing = m.getSource(FENCES) as maplibregl.GeoJSONSource | undefined
+    if (existing) {
+      existing.setData(fenceData)
+    } else {
+      m.addSource(FENCES, { type: 'geojson', data: fenceData })
+      m.addLayer({
+        id: `${FENCES}-fill`,
+        type: 'fill',
+        source: FENCES,
+        paint: {
+          'fill-color': ['case', ['get', 'keepOut'], '#ef4444', '#22c55e'],
+          'fill-opacity': 0.12,
+        },
+      })
+      m.addLayer({
+        id: `${FENCES}-line`,
+        type: 'line',
+        source: FENCES,
+        paint: {
+          'line-color': ['case', ['get', 'keepOut'], '#ef4444', '#22c55e'],
+          'line-width': 2,
+        },
+      })
+    }
+
+    // Drawing preview: placed vertices as a line back to the start
+    const coords = (drawing ?? []).map((p) => [p.lon, p.lat])
+    const drawData: GeoJSON.Feature = {
+      type: 'Feature',
+      properties: {},
+      geometry:
+        coords.length >= 2
+          ? { type: 'LineString', coordinates: [...coords, coords[0]] }
+          : { type: 'MultiPoint', coordinates: coords },
+    }
+    const drawSource = m.getSource(DRAWING) as maplibregl.GeoJSONSource | undefined
+    if (drawSource) {
+      drawSource.setData(drawData)
+    } else {
+      m.addSource(DRAWING, { type: 'geojson', data: drawData })
+      m.addLayer({
+        id: `${DRAWING}-line`,
+        type: 'line',
+        source: DRAWING,
+        paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-dasharray': [1, 1] },
+      })
+      m.addLayer({
+        id: `${DRAWING}-pts`,
+        type: 'circle',
+        source: DRAWING,
+        paint: { 'circle-radius': 4, 'circle-color': '#f59e0b' },
+      })
+    }
+  } catch {
+    // styledata can fire mid-swap; next event re-syncs
   }
 }

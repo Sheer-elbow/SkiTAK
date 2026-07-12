@@ -70,12 +70,24 @@ function EmergencyBanner() {
   if (alerts.length === 0) return null
 
   return (
-    <div className="bg-accent-red/95 text-white flex-shrink-0">
-      {alerts.map((alert) => (
-        <div key={alert.uid} className="flex items-center gap-3 px-4 py-2 text-sm">
-          <span className="text-lg animate-pulse">🆘</span>
+    <div className="flex-shrink-0">
+      {alerts.map((alert) => {
+        const isGeofence = alert.alertType.startsWith('geofence')
+        return (
+        <div
+          key={alert.uid}
+          className={clsx(
+            'flex items-center gap-3 px-4 py-2 text-sm text-white',
+            isGeofence ? 'bg-amber-600/95' : 'bg-accent-red/95',
+          )}
+        >
+          <span className="text-lg animate-pulse">{isGeofence ? '⚠️' : '🆘'}</span>
           <span className="font-semibold">
-            EMERGENCY — {alert.callsign ?? alert.senderUid}
+            {isGeofence
+              ? `GEOFENCE — ${alert.callsign ?? alert.senderUid} ${
+                  alert.alertType === 'geofence-exit' ? 'left' : 'entered'
+                } "${alert.geofenceName ?? 'zone'}"`
+              : `EMERGENCY — ${alert.callsign ?? alert.senderUid}`}
           </span>
           {alert.location && (
             <button
@@ -95,7 +107,8 @@ function EmergencyBanner() {
             Dismiss
           </button>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

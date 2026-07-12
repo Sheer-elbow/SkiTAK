@@ -44,6 +44,7 @@ export function useOtsSocket() {
 
     socket.on('point', handlePoint)
     socket.on('alert', handleAlert)
+    socket.on('skitak_geofence', handleGeofence)
 
     const staleInterval = setInterval(
       () => useStore.getState().markStaleClients(),
@@ -87,6 +88,36 @@ function handlePoint(p: PointEvent) {
     isOnline: true,
   }
   upsertClient(client)
+}
+
+interface GeofenceEvent {
+  geofence_id: string
+  geofence_name: string
+  fence_type: 'keep_in' | 'keep_out'
+  event_type: 'violation' | 'cleared'
+  tak_uid: string
+  callsign: string | null
+  lat: number
+  lon: number
+}
+
+function handleGeofence(g: GeofenceEvent) {
+  const { upsertAlert, dismissAlert } = useStore.getState()
+  const uid = `geofence-${g.geofence_id}-${g.tak_uid}`
+  if (g.event_type === 'cleared') {
+    dismissAlert(uid)
+    return
+  }
+  upsertAlert({
+    uid,
+    senderUid: g.tak_uid,
+    callsign: g.callsign,
+    alertType: g.fence_type === 'keep_in' ? 'geofence-exit' : 'geofence-enter',
+    location: { lat: g.lat, lon: g.lon },
+    startedAt: new Date().toISOString(),
+    cancelled: false,
+    geofenceName: g.geofence_name,
+  })
 }
 
 function handleAlert(a: AlertEvent) {
