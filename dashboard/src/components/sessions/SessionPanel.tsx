@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import {
+  createGeofence,
   createSession,
   createTeam,
+  deleteGeofence,
   deleteSessionRoute,
   endSession,
+  getGeofences,
   getInviteLink,
   getRunningSession,
   getSessionRoute,
@@ -221,6 +224,8 @@ function ActiveSessionView({ session, onEnd }: { session: Session; onEnd: () => 
 
       <RouteSection sessionId={session.id} />
 
+      <GeofenceSection sessionId={session.id} />
+
       {/* Add team */}
       <form onSubmit={handleAddTeam} className="space-y-2">
         <input
@@ -346,6 +351,142 @@ function RouteSection({ sessionId }: { sessionId: string }) {
         onChange={handleFile}
         aria-label="GPX route file"
       />
+    </div>
+  )
+}
+
+function GeofenceSection({ sessionId }: { sessionId: string }) {
+  const [name, setName] = useState('')
+  const [fenceType, setFenceType] = useState<'keep_in' | 'keep_out'>('keep_in')
+  const [error, setError] = useState<string | null>(null)
+  const setGeofences = useStore((s) => s.setGeofences)
+  const drawingFence = useStore((s) => s.drawingFence)
+  const startDrawingFence = useStore((s) => s.startDrawingFence)
+  const cancelDrawingFence = useStore((s) => s.cancelDrawingFence)
+  const queryClient = useQueryClient()
+
+  const { data: fences } = useQuery({
+    queryKey: ['geofences', sessionId],
+    queryFn: () => getGeofences(sessionId),
+  })
+  useEffect(() => {
+    if (fences) setGeofences(fences)
+  }, [fences])
+
+  async function handleFinish() {
+    if (!drawingFence || drawingFence.length < 3) {
+      setError('Click at least 3 points on the map')
+      return
+    }
+    setError(null)
+    try {
+      await createGeofence(sessionId, {
+        name: name.trim() || 'Zone',
+        fence_type: fenceType,
+        polygon: drawingFence,
+      })
+      cancelDrawingFence()
+      setName('')
+      queryClient.invalidateQueries({ queryKey: ['geofences', sessionId] })
+    } catch {
+      setError('Could not save the zone')
+    }
+  }
+
+  async function handleDelete(fenceId: string) {
+    await deleteGeofence(sessionId, fenceId)
+    queryClient.invalidateQueries({ queryKey: ['geofences', sessionId] })
+  }
+
+  return (
+    <div className="space-y-2">
+      <h4 className="text-xs text-gray-400 uppercase tracking-wider">Geofences</h4>
+
+      {(fences ?? []).map((f) => (
+        <div
+          key={f.id}
+          className="flex items-center justify-between bg-surface-raised rounded-lg px-3 py-2"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="w-3 h-3 rounded-sm flex-shrink-0"
+              style={{ background: f.fence_type === 'keep_out' ? '#ef4444' : '#22c55e' }}
+              title={f.fence_type === 'keep_out' ? 'Stay out' : 'Stay inside'}
+            />
+            <span className="text-sm truncate">{f.name}</span>
+            <span className="text-xs text-gray-500">
+              {f.fence_type === 'keep_out' ? 'stay out' : 'stay in'}
+            </span>
+          </div>
+          <button
+            onClick={() => handleDelete(f.id)}
+            className="text-xs text-accent-red hover:text-red-300"
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+
+      {drawingFence === null ? (
+        <button
+          onClick={startDrawingFence}
+          className="w-full text-xs bg-surface-raised hover:bg-surface-border border border-dashed border-surface-border rounded-lg px-3 py-2 text-gray-300"
+        >
+          Draw zone on map — alerts when clients cross it
+        </button>
+      ) : (
+        <div className="space-y-2 bg-surface-raised rounded-lg p-3">
+          <p className="text-xs text-amber-400">
+            Click the map to place corners ({drawingFence.length} placed)
+          </p>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Zone name"
+            className="w-full bg-surface border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+          <div className="flex gap-1 text-xs">
+            <button
+              onClick={() => setFenceType('keep_in')}
+              className={clsx(
+                'flex-1 py-1.5 rounded-md border',
+                fenceType === 'keep_in'
+                  ? 'bg-accent-green/20 border-accent-green text-accent-green'
+                  : 'border-surface-border text-gray-400',
+              )}
+            >
+              Stay inside
+            </button>
+            <button
+              onClick={() => setFenceType('keep_out')}
+              className={clsx(
+                'flex-1 py-1.5 rounded-md border',
+                fenceType === 'keep_out'
+                  ? 'bg-accent-red/20 border-accent-red text-accent-red'
+                  : 'border-surface-border text-gray-400',
+              )}
+            >
+              Stay out
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleFinish}
+              disabled={drawingFence.length < 3}
+              className="flex-1 text-xs bg-accent hover:bg-blue-500 disabled:opacity-40 rounded-lg py-1.5 font-medium"
+            >
+              Save zone
+            </button>
+            <button
+              onClick={() => { cancelDrawingFence(); setError(null) }}
+              className="text-xs text-gray-400 hover:text-white px-3"
+            >
+              Cancel
+            </button>
+          </div>
+          {error && <p className="text-xs text-accent-red">{error}</p>}
+        </div>
+      )}
     </div>
   )
 }

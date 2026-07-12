@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { PlannedRoute } from '@/api'
+import type { Geofence, PlannedRoute } from '@/api'
 import type { ChatMessage, Client, EmergencyAlert, POI, Session } from '@/types'
 
 type AuthStatus = 'checking' | 'authenticated' | 'anonymous'
@@ -18,6 +18,15 @@ interface AppState {
   // Planned route for the active session
   plannedRoute: PlannedRoute | null
   setPlannedRoute: (route: PlannedRoute | null) => void
+
+  // Geofences for the active session
+  geofences: Geofence[]
+  setGeofences: (fences: Geofence[]) => void
+  // Click-to-draw state: non-null while the guide is placing polygon points
+  drawingFence: Array<{ lat: number; lon: number }> | null
+  startDrawingFence: () => void
+  addDrawingPoint: (p: { lat: number; lon: number }) => void
+  cancelDrawingFence: () => void
 
   // Live clients — keyed by device (EUD) UID
   clients: Record<string, Client>
@@ -63,6 +72,16 @@ export const useStore = create<AppState>((set) => ({
 
   plannedRoute: null,
   setPlannedRoute: (route) => set({ plannedRoute: route }),
+
+  geofences: [],
+  setGeofences: (fences) => set({ geofences: fences }),
+  drawingFence: null,
+  startDrawingFence: () => set({ drawingFence: [] }),
+  addDrawingPoint: (p) =>
+    set((state) => ({
+      drawingFence: state.drawingFence ? [...state.drawingFence, p] : state.drawingFence,
+    })),
+  cancelDrawingFence: () => set({ drawingFence: null }),
 
   clients: {},
   upsertClient: (client) =>

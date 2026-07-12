@@ -208,6 +208,43 @@ export function deleteSessionRoute(sessionId: string) {
   return request(`/api/skitak/sessions/${sessionId}/route`, { method: 'DELETE' })
 }
 
+// ── Geofences ─────────────────────────────────────────────────────────────
+
+export interface Geofence {
+  id: string
+  name: string
+  fence_type: 'keep_in' | 'keep_out'
+  active: boolean
+  points: Array<{ lat: number; lon: number }>
+}
+
+export function createGeofence(
+  sessionId: string,
+  body: {
+    name: string
+    fence_type: 'keep_in' | 'keep_out'
+    polygon?: Array<{ lat: number; lon: number }>
+    circle?: { lat: number; lon: number; radius_m: number }
+  },
+) {
+  return request<{ geofence_id: string }>(`/api/skitak/sessions/${sessionId}/geofences`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getGeofences(sessionId: string) {
+  return request<{ geofences: Geofence[] }>(
+    `/api/skitak/sessions/${sessionId}/geofences`,
+  ).then((r) => r.geofences)
+}
+
+export function deleteGeofence(sessionId: string, fenceId: string) {
+  return request(`/api/skitak/sessions/${sessionId}/geofences/${fenceId}`, {
+    method: 'DELETE',
+  })
+}
+
 // ── Teams ─────────────────────────────────────────────────────────────────
 
 export function createTeam(sessionId: string, name: string, color: string) {

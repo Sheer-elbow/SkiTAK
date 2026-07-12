@@ -120,6 +120,36 @@ CREATE TABLE IF NOT EXISTS skitak_routes (
 
 CREATE INDEX IF NOT EXISTS idx_routes_session ON skitak_routes (session_id);
 
+-- Geofences — keep_in (boundary: alert when a client leaves) or
+-- keep_out (hazard: alert when a client enters)
+CREATE TABLE IF NOT EXISTS skitak_geofences (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id      UUID REFERENCES skitak_sessions(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    fence_type      TEXT NOT NULL DEFAULT 'keep_in',   -- keep_in | keep_out
+    geometry        GEOGRAPHY(POLYGON, 4326) NOT NULL,
+    created_by      TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    active          BOOLEAN DEFAULT TRUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_geofences_session ON skitak_geofences (session_id);
+
+-- Geofence violation log — one row per transition, not per position
+CREATE TABLE IF NOT EXISTS skitak_geofence_events (
+    id              BIGSERIAL PRIMARY KEY,
+    geofence_id     UUID REFERENCES skitak_geofences(id) ON DELETE CASCADE,
+    session_id      UUID REFERENCES skitak_sessions(id) ON DELETE CASCADE,
+    tak_uid         TEXT NOT NULL,
+    callsign        TEXT,
+    event_type      TEXT NOT NULL,                     -- violation | cleared
+    location        GEOGRAPHY(POINT, 4326),
+    occurred_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_geofence_events_session
+    ON skitak_geofence_events (session_id, occurred_at DESC);
+
 -- POI / waypoints overlay
 CREATE TABLE IF NOT EXISTS skitak_pois (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
